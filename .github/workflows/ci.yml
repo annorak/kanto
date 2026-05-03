@@ -1,0 +1,81 @@
+# =============================================================================
+# Kanto CI — lint and test
+# =============================================================================
+#
+# The `lint` job is functional from day one — it runs the same
+# pre-commit hooks every contributor uses locally. The `test` job is a
+# placeholder; it is replaced by the real pytest invocation when the
+# first workspace package lands.
+#
+# Triggers: every PR, and every push to main.
+# =============================================================================
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-flight runs of the same workflow on the same ref. Saves CI
+# minutes and produces a single up-to-date status check per PR head.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint (pre-commit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          # Full history needed so pre-commit's gitleaks hook (when run
+          # with --all-files locally) and check-merge-conflict behave
+          # identically to developer machines.
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Sync dev tooling
+        run: uv sync --group dev
+
+      - name: Cache pre-commit hooks
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Run pre-commit on all files
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+
+  test:
+    name: test (placeholder)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Replaced with `uv run pytest --cov` once the first workspace
+      # package lands. The job exists from day one so branch
+      # protection rules can already require it as a status check.
+      - name: Confirm workflow runs
+        run: |
+          echo "test job placeholder — replaced by uv run pytest once the first package lands"
+          echo "Workflow $GITHUB_WORKFLOW running on ref $GITHUB_REF"

@@ -1,0 +1,83 @@
+# =============================================================================
+# .envrc.example — direnv template for local Kanto development
+# =============================================================================
+#
+# Copy this file to `.envrc` (which is gitignored) and fill in any local
+# overrides. Then run `direnv allow` once. direnv will load these
+# variables whenever your shell enters the repo.
+#
+# IMPORTANT — this file must contain ONLY placeholders. Never write real
+# credentials here. The pre-commit gitleaks hook scans every commit; the
+# `.envrc` itself is gitignored. Real secrets live in:
+#   - ~/.oci/config        for OCI API keys
+#   - ~/.modal.toml        for Modal tokens
+#   - OCI Vault / Modal Secrets for runtime workload credentials
+#
+# See CONTRIBUTING.md for the full setup walkthrough.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Kanto runtime selector
+# -----------------------------------------------------------------------------
+# Controls which configuration profile services pick up. One of:
+#   dev       — local development (laptop + local Postgres)
+#   staging   — shared OCI staging tenancy
+#   prod      — production
+export KANTO_ENV="dev"
+
+# -----------------------------------------------------------------------------
+# OCI — credentials live in ~/.oci/config, never here
+# -----------------------------------------------------------------------------
+# Profile name to read from ~/.oci/config. Set up the file via
+# `oci setup config` before this works. See PREREQUISITES.md.
+export OCI_CLI_PROFILE="DEFAULT"
+# Auth method: api_key | instance_principal | resource_principal | security_token
+export OCI_CLI_AUTH="api_key"
+# Home region for this tenancy.
+export OCI_CLI_REGION="us-ashburn-1"
+# Compartment OCID for development resources. Replace with your dev
+# compartment's OCID. This is not a secret — OCIDs are public identifiers
+# — but it varies per environment.
+export OCI_COMPARTMENT_ID="ocid1.compartment.oc1..exampleexampleexampleexampleexampleexampleexampleexample"
+
+# -----------------------------------------------------------------------------
+# Modal — token lives in ~/.modal.toml, never here
+# -----------------------------------------------------------------------------
+# Authenticate once with `modal token new`. See PREREQUISITES.md.
+export MODAL_PROFILE="kanto-dev"
+# Modal environment within the workspace, typically "main" or "dev".
+export MODAL_ENVIRONMENT="dev"
+
+# -----------------------------------------------------------------------------
+# Mew — local Postgres + pgvector for development
+# -----------------------------------------------------------------------------
+# These point at a local Postgres container started by `docker compose up`
+# (compose file lands in a later task). DO NOT put real Mew credentials
+# here — production Mew creds come from OCI Vault at runtime.
+export MEW_HOST="localhost"
+export MEW_PORT="5432"
+export MEW_DATABASE="mew"
+export MEW_USER="kanto"
+export MEW_PASSWORD="local-dev-only-change-me"
+export MEW_SSLMODE="disable"   # local only; staging/prod require "verify-full"
+
+# Convenience DSN built from the above. Tools that take a libpq URI
+# (psql, alembic, sqlx) can use $MEW_DSN directly.
+export MEW_DSN="postgresql://${MEW_USER}:${MEW_PASSWORD}@${MEW_HOST}:${MEW_PORT}/${MEW_DATABASE}?sslmode=${MEW_SSLMODE}"
+
+# -----------------------------------------------------------------------------
+# OCI Streaming — local development uses a Kafka container
+# -----------------------------------------------------------------------------
+# In production these are OCI Streaming bootstrap servers.
+export STREAMING_BOOTSTRAP="localhost:9092"
+export STREAMING_DISCOVERED_TOPIC="kanto.discovered"
+export STREAMING_EMBEDDED_TOPIC="kanto.embedded"
+export STREAMING_SCORED_TOPIC="kanto.scored"
+
+# -----------------------------------------------------------------------------
+# uv / Python
+# -----------------------------------------------------------------------------
+# Activate the workspace venv if it exists.
+if [[ -f .venv/bin/activate ]]; then
+    source .venv/bin/activate
+fi

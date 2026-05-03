@@ -1,0 +1,145 @@
+# =============================================================================
+# Kanto gitleaks config
+# =============================================================================
+#
+# Extends gitleaks' default ruleset and adds detections specific to the
+# credentials Kanto operates with: OCI API key PEMs, OCI auth tokens, Modal
+# tokens, and generic high-entropy material in credential-shaped files.
+#
+# Used in two places:
+#   1. Pre-commit hook (staged-files only, fast feedback).
+#   2. CI workflow .github/workflows/secret-scan.yml (full diff on PRs and
+#      pushes to main).
+#
+# When adding a rule:
+#   - Test it against a local fixture under tests/fixtures/ before committing.
+#   - Add an allowlist entry below if a known-safe document trips the rule.
+#   - Prefer false positives over false negatives. A noisy rule is annoying;
+#     a missed credential is unrecoverable.
+# =============================================================================
+
+# Inherit gitleaks' default rule set (AWS keys, GitHub tokens, Slack webhooks,
+# generic API keys, etc.). Custom rules below add to this baseline.
+[extend]
+useDefault = true
+
+# -----------------------------------------------------------------------------
+# Custom rules
+# -----------------------------------------------------------------------------
+
+# OCI API key — an unencrypted RSA / EC / OpenSSH / generic PRIVATE KEY
+# block. OCI's auth model uploads the public half to the user; the private
+# half lives on disk and must never enter the repo.
+[[rules]]
+id = "kanto-oci-private-key"
+description = "OCI API key (PEM private key block)"
+regex = '''-----BEGIN (?:RSA |OPENSSH |EC |DSA |ENCRYPTED |PGP )?PRIVATE KEY-----'''
+tags = ["key", "oci", "private-key"]
+
+# OCI auth token — opaque alphanumeric strings (often seen with Container
+# Registry / DB connections). They have no fixed prefix, so we detect by
+# variable proximity rather than literal pattern. This is intentionally
+# focused on assignment context to keep noise down.
+[[rules]]
+id = "kanto-oci-auth-token"
+description = "OCI auth token assignment (variable-name heuristic)"
+regex = '''(?i)(oci[_-]?auth[_-]?token|oci[_-]?token|oci[_-]?api[_-]?token)\s*[:=]\s*['\"]([A-Za-z0-9+/=_\-]{20,})['\"]'''
+secretGroup = 2
+tags = ["token", "oci"]
+
+# OCI Object Storage pre-authenticated request URLs embed bearer-token-like
+# nonces. Treat any raw PAR URL as sensitive.
+[[rules]]
+id = "kanto-oci-par-url"
+description = "OCI Object Storage Pre-Authenticated Request URL"
+regex = '''https://objectstorage\.[a-z0-9-]+\.oraclecloud\.com/p/[A-Za-z0-9_\-]{20,}/'''
+tags = ["url", "oci", "par"]
+
+# Modal token ID — confirmed prefix "ak-" from modal-client source.
+# Production tokens are UUID-shaped (36 chars after the prefix); we match
+# 20+ to catch variants without snagging short prose like "as-of".
+[[rules]]
+id = "kanto-modal-token-id"
+description = "Modal token ID (ak- prefix)"
+regex = '''\bak-[A-Za-z0-9_\-]{20,}\b'''
+tags = ["token", "modal"]
+
+# Modal token secret — confirmed prefix "as-".
+[[rules]]
+id = "kanto-modal-token-secret"
+description = "Modal token secret (as- prefix)"
+regex = '''\bas-[A-Za-z0-9_\-]{20,}\b'''
+tags = ["token", "modal", "secret"]
+
+# Mew (Postgres) connection string with embedded password.
+[[rules]]
+id = "kanto-postgres-uri-with-password"
+description = "Postgres connection URI with inline password"
+regex = '''(?i)postgres(?:ql)?:\/\/[^:\s'\"]+:[^@\s'\"]+@[^\s'\"]+'''
+tags = ["uri", "postgres", "mew"]
+
+# Generic high-entropy content in files whose name suggests credentials.
+# Only fires inside secret-shaped paths; the path filter keeps this from
+# matching ordinary code.
+[[rules]]
+id = "kanto-generic-secret-in-cred-file"
+description = "Generic high-entropy string in credential-shaped file"
+regex = '''['\"]?[A-Za-z0-9+/=_\-]{40,}['\"]?'''
+path = '''(?i)(secret|credential|token|password|\.env|kubeconfig)'''
+entropy = 4.3
+tags = ["entropy", "generic"]
+
+# -----------------------------------------------------------------------------
+# Allowlists
+# -----------------------------------------------------------------------------
+#
+# Each entry is justified inline. Do not add an allowlist that says only
+# "false positive" — describe what the file is and why it is safe.
+
+[allowlist]
+description = "Files and paths known to contain placeholders or fixtures rather than real secrets"
+
+paths = [
+    # Example/template files always contain placeholders, never real creds.
+    '''(.*?)\.example$''',
+    '''(.*?)\.example\..*$''',
+
+    # Test fixtures may contain deliberately fake credential-shaped strings
+    # to exercise parsers and validators. Anything truly secret would live
+    # in a Modal Secret or OCI Vault, never in tests/fixtures/.
+    '''^tests/fixtures/''',
+    '''(/|^)tests/fixtures/''',
+
+    # The bootstrap checklist documents how to commit a fake secret in
+    # order to verify the scanner blocks it. The strings below the
+    # `## Test 1` heading are deliberately credential-shaped. The file
+    # is a documentation fixture by construction; if it contained real
+    # credentials we would have a problem far bigger than this allowlist.
+    '''^tests/bootstrap-checklist\.md$''',
+
+    # The gitleaks config itself has regexes that resemble what they detect.
+    '''^\.gitleaks\.toml$''',
+
+    # Lockfiles include hashes that can trip entropy rules.
+    '''^uv\.lock$''',
+    '''(/|^)uv\.lock$''',
+    '''^poetry\.lock$''',
+    '''^pnpm-lock\.yaml$''',
+    '''^package-lock\.json$''',
+
+    # Vendored dependencies (if any creep in) are upstream's problem.
+    '''(/|^)vendor/''',
+    '''(/|^)node_modules/''',
+]
+
+# Specific commit SHAs can be allowlisted here if a historical false
+# positive needs to be ignored. Keep this list short and well-documented.
+commits = []
+
+# Specific regex matches — useful for placeholders that look real.
+regexes = [
+    # Documentation placeholders we deliberately use in markdown / examples.
+    '''ak-EXAMPLE[A-Z0-9]*''',
+    '''as-EXAMPLE[A-Z0-9]*''',
+    '''ocid1\.tenancy\.oc1\.\.exampleexample''',
+]

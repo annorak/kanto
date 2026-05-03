@@ -1,0 +1,259 @@
+# =============================================================================
+# Kanto .gitignore
+# =============================================================================
+#
+# IMPORTANT — please read before removing entries from this file.
+#
+# Kanto is a multi-cloud system (OCI + Modal). The credential ignores below
+# are intentional, defence-in-depth, and complement the gitleaks pre-commit
+# and CI hooks. Any credential committed to public git history is compromised
+# within hours, so we err on the side of over-ignoring credential-shaped
+# files. If something legitimate is being ignored, prefer adding an explicit
+# `!path/to/file` exception over loosening a pattern.
+#
+# Categories below, in order:
+#   1. Python build artifacts and tooling caches
+#   2. Virtual environments
+#   3. IDE / editor files
+#   4. OS junk
+#   5. Local environment files (.env, .envrc) — but NOT *.example
+#   6. Cloud credentials (OCI, Modal, GCP, AWS) and key material
+#   7. Kubernetes config
+#   8. Terraform state / plan / vars
+#   9. Generic credential-shaped filenames at root and one level deep
+#  10. Operator-local task spec files (kept out of repo)
+#  11. Project-specific outputs (genome data, model weights)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. Python build artifacts and tooling caches
+# -----------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.cache
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# uv
+.uv-cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# -----------------------------------------------------------------------------
+# 2. Virtual environments
+# -----------------------------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+.env-venv/
+
+# -----------------------------------------------------------------------------
+# 3. IDE / editor files
+# -----------------------------------------------------------------------------
+.idea/
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+.cursor/
+.aider*
+CLAUDE.local.md
+
+# -----------------------------------------------------------------------------
+# 4. OS junk
+# -----------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# -----------------------------------------------------------------------------
+# 5. Local environment files
+#     The .example variants ARE tracked; the real ones never are.
+# -----------------------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+.env.*
+!.env.example
+!.env.*.example
+
+.envrc
+!.envrc.example
+
+# -----------------------------------------------------------------------------
+# 6. Cloud credentials and key material
+#     OCI, Modal, plus belt-and-braces for adjacent clouds in case operators
+#     copy creds into the repo by accident while debugging.
+# -----------------------------------------------------------------------------
+
+# OCI
+.oci/
+oci_api_key*.pem
+oci_api_key*.pub
+*_oci_*.pem
+config.oci
+
+# Modal — token file lives at ~/.modal.toml; never copy it into the repo.
+.modal.toml
+modal.toml
+!modal.toml.example
+
+# Generic key / cert material (any depth)
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.truststore
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+id_ecdsa
+id_ecdsa.*
+*_rsa
+*_dsa
+*_ed25519
+*_ecdsa
+known_hosts
+authorized_keys
+
+# Generic JSON-shaped credential blobs (at most two levels deep)
+credentials.json
+credentials.*.json
+*-credentials.json
+service-account*.json
+gcp-*.json
+aws-*.json
+*/credentials.json
+*/service-account*.json
+
+# AWS / GCP — included so a misplaced cred from another env can't sneak in.
+.aws/
+.gcp/
+gcloud/
+
+# -----------------------------------------------------------------------------
+# 7. Kubernetes config — these embed cluster certs and bearer tokens.
+# -----------------------------------------------------------------------------
+kubeconfig
+kubeconfig.*
+*.kubeconfig
+.kube/
+!.kube/.gitkeep
+
+# -----------------------------------------------------------------------------
+# 8. Terraform
+#     *.tfvars frequently contain secrets in practice. The pre-commit hook
+#     also blocks staging *.tfvars; this is the second line of defence.
+# -----------------------------------------------------------------------------
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+!*.tfvars.json.example
+
+# -----------------------------------------------------------------------------
+# 9. Generic credential-shaped filenames at root or one level deep
+# -----------------------------------------------------------------------------
+secret
+secret.*
+secrets
+secrets.*
+*_secret
+*_secret.*
+*-secret
+*-secret.*
+!*.example
+/secret/
+/secrets/
+
+# -----------------------------------------------------------------------------
+# 10. Operator-local task spec files
+#     Task descriptions for Tasks 0–17 are working documents the operator
+#     hands to the implementer. They live alongside the repo for convenience
+#     but are not part of the project history.
+# -----------------------------------------------------------------------------
+task-*.md
+PREREQUISITES_NOT_MET.md
+
+# -----------------------------------------------------------------------------
+# 11. Project-specific outputs
+#     Large binary artifacts that should never live in git. The 1 MB
+#     pre-commit hook also catches these, but explicit is better than
+#     implicit.
+# -----------------------------------------------------------------------------
+*.fna
+*.fna.gz
+*.faa
+*.faa.gz
+*.fasta
+*.parquet
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.onnx
+*.npz
+data/
+models/
+!models/.gitkeep
+weights/

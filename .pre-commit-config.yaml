@@ -1,0 +1,128 @@
+# =============================================================================
+# Kanto pre-commit configuration
+# =============================================================================
+#
+# Mandatory for all contributors. Install once after cloning:
+#   pre-commit install
+#
+# Then every `git commit` runs the hooks below against staged files.
+# CI re-runs `pre-commit run --all-files` so a missing local install cannot
+# bypass the policy.
+#
+# When updating hook revisions: bump one at a time, run `pre-commit run
+# --all-files` against the repo, and check the changelog for breaking
+# changes. Pinning specific revisions (rather than tracking `main`) is
+# deliberate — supply chain compromise of a hook upstream should not
+# silently apply to every developer's machine.
+# =============================================================================
+
+minimum_pre_commit_version: "3.7.0"
+default_language_version:
+  python: python3.12
+fail_fast: false
+
+repos:
+  # ---------------------------------------------------------------------------
+  # Standard hygiene hooks
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+        # Allow Helm template YAML in later tasks; the template syntax is
+        # not valid YAML, and there is no useful linter for it at this
+        # stage.
+        exclude: '^infrastructure/helm/.*/templates/.*\.ya?ml$'
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: detect-private-key
+        # The bootstrap checklist documents how to commit a fake PEM in
+        # order to verify the gitleaks kanto-oci-private-key rule fires.
+        # The checklist is a documentation fixture by construction; the
+        # gitleaks allowlist already covers it. The detect-private-key
+        # hook has no native allowlist mechanism, so we exclude the
+        # single file here.
+        exclude: '^tests/bootstrap-checklist\.md$'
+      - id: check-case-conflict
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  # ---------------------------------------------------------------------------
+  # Secret scanning
+  # ---------------------------------------------------------------------------
+  # gitleaks scans staged files only on commit, full diff in CI.
+  #
+  # We invoke the system-installed gitleaks binary rather than building
+  # from Go source via the upstream pre-commit hook. Reasons:
+  #   1. Modern gitleaks requires Go 1.23+; pinning a Go toolchain on
+  #      every contributor machine is more friction than `brew install
+  #      gitleaks`.
+  #   2. The CI workflow runs the same upstream binary (via
+  #      gitleaks-action), so local and CI behaviour stay aligned.
+  #   3. CONTRIBUTING.md already lists gitleaks as a prerequisite; this
+  #      config exercises that requirement.
+  - repo: local
+    hooks:
+      - id: gitleaks
+        name: "gitleaks (staged files)"
+        description: |
+          Scans staged files for credential-shaped strings using the
+          rules in .gitleaks.toml. Blocks the commit on detection.
+        entry: gitleaks protect --staged --redact --verbose --config=.gitleaks.toml
+        language: system
+        pass_filenames: false
+        # Run on every commit, even when no files match a path filter.
+        always_run: true
+        stages: [pre-commit]
+
+  # ---------------------------------------------------------------------------
+  # Python: lint and format with ruff
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix"]
+      - id: ruff-format
+
+  # ---------------------------------------------------------------------------
+  # Python: type checking with mypy (strict, configured in pyproject.toml)
+  # ---------------------------------------------------------------------------
+  # mypy in pre-commit only runs against changed Python files. Its full
+  # strict run is enforced in CI on the entire workspace. There is no
+  # Python source yet, so the hook is a no-op until services land — but
+  # having it wired in means the first PR with Python code is
+  # type-checked from the start.
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        # Skip when there are no Python files in the diff.
+        files: '\.py$'
+        # Avoid pulling in service deps inside the mypy hook env; CI does
+        # full-resolution type checking. Locally we keep it fast.
+        args: ["--config-file=pyproject.toml", "--no-incremental"]
+        additional_dependencies: []
+
+  # ---------------------------------------------------------------------------
+  # Local custom hook — block accidental commits of secret-bearing files
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: block-tfvars-and-envrc
+        name: "Block staged *.tfvars and .envrc files"
+        description: |
+          Refuses any staged file ending in .tfvars (without a .example
+          suffix) or named .envrc. These files routinely hold credentials
+          and have no reason to be tracked. Use the .example variants for
+          documentation.
+        entry: scripts/check-no-tfvars-or-envrc.sh
+        language: script
+        pass_filenames: true
+        always_run: false
