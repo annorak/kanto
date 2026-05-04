@@ -34,7 +34,7 @@ export OCI_CLI_PROFILE="DEFAULT"
 # Auth method: api_key | instance_principal | resource_principal | security_token
 export OCI_CLI_AUTH="api_key"
 # Home region for this tenancy.
-export OCI_CLI_REGION="us-ashburn-1"
+export OCI_CLI_REGION="us-sanjose-1"
 # Compartment OCID for development resources. Replace with your dev
 # compartment's OCID. This is not a secret — OCIDs are public identifiers
 # — but it varies per environment.
@@ -83,7 +83,7 @@ export KANTO_MEW_DSN="postgresql://${KANTO_MEW_USER}:${KANTO_MEW_PASSWORD}@${KAN
 # OCI console. The bucket names below are the v1 defaults; override
 # only if you've provisioned non-standard names in Terraform.
 export KANTO_OS_NAMESPACE="example-tenancy-namespace"
-export KANTO_OS_REGION="us-ashburn-1"
+export KANTO_OS_REGION="us-sanjose-1"
 export KANTO_OS_PROTEINS_BUCKET="kanto-proteins"
 export KANTO_OS_EMBEDDINGS_BUCKET="kanto-embeddings"
 export KANTO_OS_CACHE_BUCKET="kanto-cache"

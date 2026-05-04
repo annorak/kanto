@@ -44,7 +44,7 @@ def _set_minimum_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("KANTO_MEW_USER", "kanto")
     monkeypatch.setenv("KANTO_MEW_PASSWORD", "supersecret")
     monkeypatch.setenv("KANTO_OS_NAMESPACE", "tenancy-x")
-    monkeypatch.setenv("KANTO_OS_REGION", "us-ashburn-1")
+    monkeypatch.setenv("KANTO_OS_REGION", "us-sanjose-1")
     monkeypatch.setenv("KANTO_STREAMING_BOOTSTRAP", "kafka:9092")
 
 

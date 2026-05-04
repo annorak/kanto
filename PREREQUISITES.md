@@ -43,10 +43,10 @@ configuration:
 
 ### Region
 
-- Home region: **us-ashburn-1**. All Terraform modules under
+- Home region: **us-sanjose-1**. All Terraform modules under
   `infrastructure/terraform/` default to this region.
 - Confirm with `oci iam region-subscription list` and verify
-  `us-ashburn-1` is in the subscribed list.
+  `us-sanjose-1` is in the subscribed list.
 
 ### Compartment
 

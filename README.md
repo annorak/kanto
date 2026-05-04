@@ -7,7 +7,7 @@ embeddings using a protein language model (ESM C), and flags isolates whose
 embeddings sit anomalously far from everything we have seen before. The
 output is a real-time queue of "genomes that look weird and warrant a second
 look," targeted at biosurveillance analysts. v1 is bacterial-only,
-single-region (`us-ashburn-1`), English-language reporting.
+single-region (`us-sanjose-1`), English-language reporting.
 
 The architecture, scale numbers, and the rationale for every non-obvious
 decision live in [`docs/design.md`](docs/design.md). Read that first.
