@@ -110,6 +110,14 @@ paths = [
     '''^tests/fixtures/''',
     '''(/|^)tests/fixtures/''',
 
+    # Per-package test directories (libs/*/tests/, services/*/tests/) by
+    # the same logic — tests routinely embed fake DSN strings, fake API
+    # tokens, etc. to prove that scrubbers and parsers handle them. Real
+    # secrets never belong in tests/ and there's an in-repo convention
+    # documented in CONTRIBUTING.md to that effect.
+    '''(/|^)libs/[^/]+/tests/''',
+    '''(/|^)services/[^/]+/tests/''',
+
     # The bootstrap checklist documents how to commit a fake secret in
     # order to verify the scanner blocks it. The strings below the
     # `## Test 1` heading are deliberately credential-shaped. The file

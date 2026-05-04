@@ -45,16 +45,13 @@ package = false
 [tool.uv.workspace]
 # Member packages are added as services and libs come online. The
 # anticipated members are:
-#   libs/kanto-common
-#   services/growlithe
-#   services/snorlax
-#   services/ditto
-#   services/alakazam
-#   services/chatot
-# Until each directory has its own pyproject.toml the list stays empty
-# so `uv sync` succeeds on the bare repository (bootstrap checklist
-# test #3).
-members = []
+#   libs/kanto-common              <- Task 1
+#   services/growlithe             <- Task 4
+#   services/snorlax               <- Task 5
+#   services/ditto                 <- Task 7 (Modal)
+#   services/alakazam              <- Task 6
+#   services/chatot                <- Task 8
+members = ["libs/kanto-common"]
 exclude = []
 
 # -----------------------------------------------------------------------------
@@ -121,11 +118,23 @@ extra_checks = true
 show_error_codes = true
 pretty = true
 
-# Ignore third-party packages without type stubs by default; per-package
-# overrides in services/* can opt into stricter behaviour.
+# Tests have looser type-discipline defaults.
 [[tool.mypy.overrides]]
 module = ["tests.*"]
 disallow_untyped_defs = false
+
+# Third-party libraries without bundled type stubs. Listed at the
+# repo root so that running mypy from the workspace top-level (which
+# is what pre-commit and CI do) sees the same overrides as a local
+# `mypy` invocation inside a single package.
+[[tool.mypy.overrides]]
+module = [
+    "oci.*",
+    "aiokafka.*",
+    "pgvector.*",
+    "testcontainers.*",
+]
+ignore_missing_imports = true
 
 # -----------------------------------------------------------------------------
 # pytest

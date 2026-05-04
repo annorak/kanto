@@ -94,21 +94,33 @@ repos:
   # ---------------------------------------------------------------------------
   # Python: type checking with mypy (strict, configured in pyproject.toml)
   # ---------------------------------------------------------------------------
-  # mypy in pre-commit only runs against changed Python files. Its full
-  # strict run is enforced in CI on the entire workspace. There is no
-  # Python source yet, so the hook is a no-op until services land — but
-  # having it wired in means the first PR with Python code is
-  # type-checked from the start.
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.13.0
+  # We invoke mypy through `uv run` so it sees the workspace's installed
+  # dependencies (pydantic, structlog, aiokafka, ...). The mirrors-mypy
+  # pre-commit hook runs in an isolated venv with only the deps listed in
+  # `additional_dependencies`; that approach forces us to maintain a
+  # parallel dependency list and falls behind silently. Letting `uv run`
+  # delegate to the workspace venv gives correctness for free at the cost
+  # of requiring `uv sync` once after clone (which CONTRIBUTING.md already
+  # requires for the test suite anyway).
+  #
+  # Strict mode and per-package overrides are configured in the per-package
+  # pyproject.toml files; the root pyproject.toml has the repo-wide defaults.
+  - repo: local
     hooks:
       - id: mypy
-        # Skip when there are no Python files in the diff.
-        files: '\.py$'
-        # Avoid pulling in service deps inside the mypy hook env; CI does
-        # full-resolution type checking. Locally we keep it fast.
-        args: ["--config-file=pyproject.toml", "--no-incremental"]
-        additional_dependencies: []
+        name: "mypy (strict, via uv run)"
+        # Hard-code the workspace package source dirs so mypy walks each
+        # package's [tool.mypy] config, not just the staged file in
+        # isolation (which loses cross-file context and produces noise on
+        # strict-mode packages). As more workspace members land, append
+        # their source paths to this command. The trade-off: we re-check
+        # all packages on any Python change, but the suite is small and
+        # mypy caches aggressively.
+        entry: uv run mypy libs/kanto-common/src/kanto_common
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true
 
   # ---------------------------------------------------------------------------
   # Local custom hook — block accidental commits of secret-bearing files

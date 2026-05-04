@@ -49,30 +49,64 @@ export MODAL_PROFILE="kanto-dev"
 export MODAL_ENVIRONMENT="dev"
 
 # -----------------------------------------------------------------------------
+# Naming convention
+# -----------------------------------------------------------------------------
+# Everything Kanto's runtime reads is prefixed KANTO_*. Variables NOT
+# prefixed (OCI_CLI_*, MODAL_*, OCI_COMPARTMENT_ID above) belong to
+# external tools (the oci CLI, the modal CLI, terraform) and follow
+# those tools' own conventions.
+
+# -----------------------------------------------------------------------------
 # Mew — local Postgres + pgvector for development
 # -----------------------------------------------------------------------------
 # These point at a local Postgres container started by `docker compose up`
 # (compose file lands in a later task). DO NOT put real Mew credentials
 # here — production Mew creds come from OCI Vault at runtime.
-export MEW_HOST="localhost"
-export MEW_PORT="5432"
-export MEW_DATABASE="mew"
-export MEW_USER="kanto"
-export MEW_PASSWORD="local-dev-only-change-me"
-export MEW_SSLMODE="disable"   # local only; staging/prod require "verify-full"
+export KANTO_MEW_HOST="localhost"
+export KANTO_MEW_PORT="5432"
+export KANTO_MEW_DATABASE="mew"
+export KANTO_MEW_USER="kanto"
+export KANTO_MEW_PASSWORD="local-dev-only-change-me"
+# Local only; staging/prod require "verify-full".
+export KANTO_MEW_SSLMODE="disable"
 
 # Convenience DSN built from the above. Tools that take a libpq URI
-# (psql, alembic, sqlx) can use $MEW_DSN directly.
-export MEW_DSN="postgresql://${MEW_USER}:${MEW_PASSWORD}@${MEW_HOST}:${MEW_PORT}/${MEW_DATABASE}?sslmode=${MEW_SSLMODE}"
+# (psql, alembic, sqlx) can use $KANTO_MEW_DSN directly. The Python
+# config module builds its own DSN from the components above; this
+# variable is purely for shell tools.
+export KANTO_MEW_DSN="postgresql://${KANTO_MEW_USER}:${KANTO_MEW_PASSWORD}@${KANTO_MEW_HOST}:${KANTO_MEW_PORT}/${KANTO_MEW_DATABASE}?sslmode=${KANTO_MEW_SSLMODE}"
+
+# -----------------------------------------------------------------------------
+# OCI Object Storage — Kanto's bulk-data tier
+# -----------------------------------------------------------------------------
+# Namespace is per-tenancy and shows up under Object Storage in the
+# OCI console. The bucket names below are the v1 defaults; override
+# only if you've provisioned non-standard names in Terraform.
+export KANTO_OS_NAMESPACE="example-tenancy-namespace"
+export KANTO_OS_REGION="us-ashburn-1"
+export KANTO_OS_PROTEINS_BUCKET="kanto-proteins"
+export KANTO_OS_EMBEDDINGS_BUCKET="kanto-embeddings"
+export KANTO_OS_CACHE_BUCKET="kanto-cache"
 
 # -----------------------------------------------------------------------------
 # OCI Streaming — local development uses a Kafka container
 # -----------------------------------------------------------------------------
 # In production these are OCI Streaming bootstrap servers.
-export STREAMING_BOOTSTRAP="localhost:9092"
-export STREAMING_DISCOVERED_TOPIC="kanto.discovered"
-export STREAMING_EMBEDDED_TOPIC="kanto.embedded"
-export STREAMING_SCORED_TOPIC="kanto.scored"
+export KANTO_STREAMING_BOOTSTRAP="localhost:9092"
+export KANTO_STREAMING_DISCOVERED_TOPIC="kanto.discovered"
+export KANTO_STREAMING_EMBEDDED_TOPIC="kanto.embedded"
+export KANTO_STREAMING_SCORED_TOPIC="kanto.scored"
+
+# -----------------------------------------------------------------------------
+# Logging and tracing
+# -----------------------------------------------------------------------------
+# DEBUG | INFO | WARNING | ERROR | CRITICAL
+export KANTO_LOG_LEVEL="INFO"
+# json (production) | console (local dev, colored human-readable)
+export KANTO_LOG_FORMAT="console"
+# Leave KANTO_OTEL_ENDPOINT unset to fall back to console span export.
+# In production this points at an OTLP HTTP collector.
+# export KANTO_OTEL_ENDPOINT="http://localhost:4318/v1/traces"
 
 # -----------------------------------------------------------------------------
 # uv / Python
