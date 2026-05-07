@@ -12,7 +12,12 @@
 
 [project]
 name = "kanto-common"
-version = "0.1.0"
+# Bumped to 0.2.0 alongside Task 3: the testing-fixture pool now
+# registers the pgvector adapter so embedding reads round-trip
+# correctly. Service consumers of ``MewClient.from_settings`` are
+# unaffected (it already wired the adapter); only the
+# ``mew_pool`` test fixture changed.
+version = "0.2.0"
 description = "Shared schemas, clients, and observability primitives for Kanto services"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -55,7 +60,13 @@ dev = [
     "testcontainers[postgres]>=4.8.0",
     "mypy>=1.13.0",
     "types-protobuf",
+    # Used by the testcontainers fixture to apply migrations via
+    # ``alembic upgrade head`` instead of a hand-rolled DDL bootstrap.
+    "kanto-migrations",
 ]
+
+[tool.uv.sources]
+kanto-migrations = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
@@ -63,6 +74,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kanto_common"]
+# Ensure the py.typed marker ships in the wheel so type checkers
+# treat kanto-common's public API as typed.
+include = ["src/kanto_common/py.typed"]
 
 # -----------------------------------------------------------------------------
 # pytest — package-local overrides on top of the repo-root config.
@@ -71,6 +85,10 @@ packages = ["src/kanto_common"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: tests that require external services (Docker, etc.)",
+    "slow: tests that take more than a few seconds",
+]
 
 # -----------------------------------------------------------------------------
 # ruff — package-local overrides on top of the repo-root config.

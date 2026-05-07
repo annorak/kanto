@@ -4,17 +4,17 @@ The fixtures are session-scoped — one container per test process —
 because container start/stop is the slow part. Repository tests share
 the same container and clean up between tests via TRUNCATE.
 
-The DDL bootstrap below is **temporary**. Task 3 of the Kanto plan
-introduces Alembic; once it lands, this module's ``bootstrap_schema``
-will be removed and the fixture will run ``alembic upgrade head``
-against the container instead.
+Schema is applied by running ``alembic upgrade head`` against the
+container, so these tests exercise the same DDL path the operator
+runs against dev and prod. The Alembic runner is imported lazily
+inside :func:`bootstrap_schema` so kanto-common doesn't take a
+hard runtime dependency on kanto-migrations.
 """
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 
-import psycopg
 import pytest
 import pytest_asyncio
 from psycopg_pool import AsyncConnectionPool
@@ -22,67 +22,18 @@ from testcontainers.postgres import PostgresContainer
 
 from kanto_common.config import MewSettings
 
-# Hard-coded DDL matching docs/design.md §7. Replaced by Alembic in Task 3.
-_BOOTSTRAP_SQL = """
-CREATE EXTENSION IF NOT EXISTS vector;
-
-CREATE TABLE IF NOT EXISTS isolates (
-    accession         TEXT PRIMARY KEY,
-    version           INT NOT NULL,
-    organism          TEXT NOT NULL,
-    source            TEXT NOT NULL,
-    collection_date   DATE,
-    location          TEXT,
-    source_type       TEXT,
-    status            TEXT NOT NULL,
-    qc_failure_reason TEXT,
-    modal_call_id     TEXT,
-    novelty_score     DOUBLE PRECISION,
-    nn_distance       DOUBLE PRECISION,
-    coverage          DOUBLE PRECISION,
-    mahalanobis       DOUBLE PRECISION,
-    above_threshold   BOOLEAN,
-    discovered_at     TIMESTAMPTZ,
-    scored_at         TIMESTAMPTZ,
-    raw_metadata      JSONB
-);
-
-CREATE TABLE IF NOT EXISTS genome_embeddings (
-    accession     TEXT PRIMARY KEY REFERENCES isolates(accession),
-    version       INT NOT NULL,
-    model         TEXT NOT NULL,
-    model_version TEXT NOT NULL,
-    embedding     vector(1152) NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS genome_embeddings_hnsw_idx
-    ON genome_embeddings USING hnsw (embedding vector_cosine_ops);
-
-CREATE TABLE IF NOT EXISTS alerts (
-    id              BIGSERIAL PRIMARY KEY,
-    accession       TEXT REFERENCES isolates(accession),
-    version         INT NOT NULL,
-    score           DOUBLE PRECISION NOT NULL,
-    triggered_at    TIMESTAMPTZ DEFAULT NOW(),
-    status          TEXT DEFAULT 'OPEN',
-    notes           TEXT
-);
-"""
-
 
 def bootstrap_schema(dsn: str) -> None:
-    """Apply the design-doc DDL synchronously, once per fresh container."""
-    with psycopg.connect(dsn, autocommit=True) as conn:
-        for statement in _split_sql(_BOOTSTRAP_SQL):
-            conn.execute(statement)
+    """Apply all Alembic migrations to ``head`` against ``dsn``.
 
-
-def _split_sql(sql: str) -> list[str]:
-    """Split a multi-statement SQL blob on ``;`` while skipping empties.
-
-    Adequate for our tiny bootstrap DDL — not a general-purpose parser.
+    The import is lazy so kanto-common stays installable in environments
+    where kanto-migrations isn't on the path (e.g. minimal service
+    images). Tests that need this fixture must have kanto-migrations as
+    a dev dependency in their package's pyproject.
     """
-    return [s.strip() for s in sql.split(";") if s.strip()]
+    from kanto_migrations import runner
+
+    runner.upgrade(dsn=dsn)
 
 
 @pytest.fixture(scope="session")
@@ -127,12 +78,23 @@ async def mew_pool(mew_settings: MewSettings) -> AsyncIterator[AsyncConnectionPo
     Test isolation is via TRUNCATE rather than container restart for
     speed. Tests that need full schema reset can call
     :func:`bootstrap_schema` themselves.
+
+    The ``configure`` callback registers the pgvector adapter on every
+    new connection. Without it, vector reads come back as the literal
+    string ``"[0.1,0.2,...]"`` and ``EmbeddingRow.model_validate``
+    explodes — the same wiring :class:`MewClient.from_settings` relies
+    on at runtime.
     """
+    # Imported here to avoid a top-level import cycle: client.py imports
+    # config which is consumed by the fixtures above.
+    from kanto_common.mew.client import _configure_connection
+
     dsn = mew_settings.dsn()
     pool = AsyncConnectionPool(
         dsn,
         min_size=mew_settings.pool_min_size,
         max_size=mew_settings.pool_max_size,
+        configure=_configure_connection,
         open=False,
     )
     await pool.open()

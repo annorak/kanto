@@ -46,12 +46,13 @@ package = false
 # Member packages are added as services and libs come online. The
 # anticipated members are:
 #   libs/kanto-common              <- Task 1
+#   infrastructure/migrations      <- Task 3
 #   services/growlithe             <- Task 4
 #   services/snorlax               <- Task 5
 #   services/ditto                 <- Task 7 (Modal)
 #   services/alakazam              <- Task 6
 #   services/chatot                <- Task 8
-members = ["libs/kanto-common"]
+members = ["libs/kanto-common", "infrastructure/migrations"]
 exclude = []
 
 # -----------------------------------------------------------------------------
@@ -68,6 +69,7 @@ extend-exclude = [
     "dist",
     "infrastructure/helm",
     "infrastructure/terraform",
+    "**/versions/*.py.mako",
 ]
 
 [tool.ruff.lint]
@@ -149,7 +151,12 @@ addopts = [
     "--cov-report=term-missing",
     "--cov-fail-under=70",
 ]
-testpaths = ["tests", "services", "libs"]
+# Each workspace member owns its own pytest config and runs its tests
+# from its own working directory (CI does this; local devs follow the
+# same convention). The root-level pytest invocation is reserved for
+# the cross-cutting tests under ``tests/`` only — listing nested
+# packages here causes ``tests.conftest`` collisions across packages.
+testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
@@ -168,6 +175,9 @@ markers = [
 
 [tool.coverage.run]
 branch = true
+# Each package enforces its own coverage gate via its own pyproject.
+# The root-level coverage config is here for the future cross-cutting
+# ``tests/`` directory only.
 source = ["libs", "services"]
 omit = [
     "*/tests/*",

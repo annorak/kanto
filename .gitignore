@@ -58,6 +58,12 @@ pip-delete-this-directory.txt
 .ruff_cache/
 .tox/
 .nox/
+
+# uv lockfile — kept out of the repo per operator preference. Means CI
+# resolves transitive deps fresh on every run; if a dependency cuts a
+# breaking release we will discover it on the next CI run rather than
+# at deploy time. Revisit if reproducibility issues bite.
+uv.lock
 .coverage
 .coverage.*
 htmlcov/

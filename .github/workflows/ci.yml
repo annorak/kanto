@@ -64,18 +64,67 @@ jobs:
       - name: Run pre-commit on all files
         run: uv run pre-commit run --all-files --show-diff-on-failure
 
-  test:
-    name: test (placeholder)
+  test-kanto-common:
+    name: test (kanto-common)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      # Replaced with `uv run pytest --cov` once the first workspace
-      # package lands. The job exists from day one so branch
-      # protection rules can already require it as a status check.
-      - name: Confirm workflow runs
-        run: |
-          echo "test job placeholder — replaced by uv run pytest once the first package lands"
-          echo "Workflow $GITHUB_WORKFLOW running on ref $GITHUB_REF"
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Sync workspace
+        run: uv sync --all-packages --group dev
+
+      - name: Run unit tests
+        working-directory: libs/kanto-common
+        run: uv run pytest tests/unit/ -p no:cacheprovider
+
+      - name: Run integration tests (testcontainers)
+        working-directory: libs/kanto-common
+        run: uv run pytest tests/integration/ -m integration -p no:cacheprovider --no-cov
+
+  test-migrations:
+    name: test (migrations)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Coverage gate is enforced at 90% inside the migrations pyproject.
+    # The job runs on every PR — schema changes are review-gated and we
+    # want CI to catch up/down regressions before merge.
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Sync workspace
+        run: uv sync --all-packages --group dev
+
+      - name: Run migration test suite
+        working-directory: infrastructure/migrations
+        run: uv run pytest tests/ -p no:cacheprovider
+
+      - name: Run safety scanner
+        # Warning-only — flagged migrations stay on the PR for the
+        # reviewer to assess. Never blocks the job.
+        working-directory: infrastructure/migrations
+        run: uv run python -m kanto_migrations.safety

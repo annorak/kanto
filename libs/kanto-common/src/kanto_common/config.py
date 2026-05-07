@@ -39,8 +39,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Environment(StrEnum):
-    """The deployment tier this service is running in."""
+    """The deployment tier this service is running in.
 
+    ``LOCAL`` distinguishes a developer laptop (with seeded test data
+    and relaxed safety guards) from a real cloud environment. The
+    seed-mew script refuses to run unless ``KANTO_ENV=local``.
+    """
+
+    LOCAL = "local"
     DEV = "dev"
     STAGING = "staging"
     PROD = "prod"
