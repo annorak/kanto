@@ -56,8 +56,25 @@ jobs:
           # we actually commit — pyproject.toml in the workspace and packages.
           cache-dependency-glob: "**/pyproject.toml"
 
-      - name: Sync dev tooling
-        run: uv sync --group dev
+      - name: Sync workspace
+        # --all-packages installs every workspace member's deps so the mypy
+        # pre-commit hook can resolve pydantic / opentelemetry / etc. against
+        # libs/kanto-commons. Mirrors what the test jobs below already do.
+        run: uv sync --all-packages --group dev
+
+      - name: Install gitleaks
+        # Pre-commit's gitleaks hook is `language: system`, so the binary
+        # must be on PATH before `pre-commit run`. Pinned version: bump
+        # deliberately, never track latest.
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          sudo chmod +x /usr/local/bin/gitleaks
+          gitleaks version
 
       - name: Cache pre-commit hooks
         uses: actions/cache@v4
