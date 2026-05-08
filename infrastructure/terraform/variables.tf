@@ -75,11 +75,6 @@ variable "mew_memory_gb" {
   type        = number
 }
 
-variable "mew_storage_gb" {
-  description = "Mew storage size, GB."
-  type        = number
-}
-
 variable "mew_instance_count" {
   description = "Mew instance count. 1 = single instance (dev). 2+ = HA (prod)."
   type        = number

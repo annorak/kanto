@@ -24,11 +24,6 @@ variable "nsg_id" {
   type        = string
 }
 
-variable "kms_key_id" {
-  description = "KMS key OCID for storage encryption. Bring-your-own-key."
-  type        = string
-}
-
 variable "admin_username" {
   description = "Postgres admin user name."
   type        = string
@@ -59,11 +54,6 @@ variable "ocpu_count" {
 
 variable "memory_gb" {
   description = "Memory per instance, in GB."
-  type        = number
-}
-
-variable "storage_gb" {
-  description = "Storage size, in GB."
   type        = number
 }
 

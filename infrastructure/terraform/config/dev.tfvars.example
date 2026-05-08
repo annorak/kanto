@@ -17,7 +17,6 @@ ssh_public_key = "ssh-ed25519 AAAA...REPLACE"
 # Mew sizing — small in dev.
 mew_ocpu_count             = 2
 mew_memory_gb              = 16
-mew_storage_gb             = 50
 mew_instance_count         = 1
 mew_backup_retention_days  = 7
 mew_enable_public_endpoint = false # Modal does not connect to dev

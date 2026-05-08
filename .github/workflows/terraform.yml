@@ -79,12 +79,9 @@ jobs:
       - uses: terraform-linters/setup-tflint@v4
         with:
           tflint_version: latest
-      - name: Init tflint (OCI ruleset)
-        run: tflint --init
-        working-directory: infrastructure/terraform
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Run tflint
+        # No `tflint --init` — we use only the bundled `terraform` plugin
+        # (no OCI plugin exists yet; see infrastructure/terraform/.tflint.hcl).
         run: tflint --recursive --minimum-failure-severity=warning
         working-directory: infrastructure/terraform
 

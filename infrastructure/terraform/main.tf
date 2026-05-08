@@ -78,11 +78,9 @@ module "mew" {
   subnet_id                = module.network.subnet_mew_id
   public_subnet_id         = module.network.subnet_public_id
   nsg_id                   = module.network.nsg_mew_id
-  kms_key_id               = module.vault.master_key_id
   admin_password_secret_id = module.vault.mew_password_secret_id
   ocpu_count               = var.mew_ocpu_count
   memory_gb                = var.mew_memory_gb
-  storage_gb               = var.mew_storage_gb
   instance_count           = var.mew_instance_count
   backup_retention_days    = var.mew_backup_retention_days
   enable_public_endpoint   = var.mew_enable_public_endpoint

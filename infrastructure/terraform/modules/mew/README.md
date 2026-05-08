@@ -21,16 +21,24 @@ the design doc.
 
 ## Sizing
 
-| Env  | shape                  | OCPU | RAM   | Storage | instance_count | system_type            |
-| ---- | ---------------------- | ---- | ----- | ------- | -------------- | ---------------------- |
-| dev  | `VM.Standard.E4.Flex`  | 2    | 16 GB | 50 GB   | 1              | `OCI_OPTIMIZED_STORAGE`|
-| prod | `VM.Standard.E4.Flex`  | 16   | 128GB | 200GB   | 2 (HA)         | `OCI_OPTIMIZED_STORAGE`|
+| Env  | shape                  | OCPU | RAM   | instance_count | system_type            |
+| ---- | ---------------------- | ---- | ----- | -------------- | ---------------------- |
+| dev  | `VM.Standard.E4.Flex`  | 2    | 16 GB | 1              | `OCI_OPTIMIZED_STORAGE`|
+| prod | `VM.Standard.E4.Flex`  | 16   | 128GB | 2 (HA)         | `OCI_OPTIMIZED_STORAGE`|
+
+> **Storage size and BYOK:** OCI Database for PostgreSQL exposes neither
+> a `data_storage_size_in_gbs` argument nor a `kms_key_id` for the storage
+> layer. Capacity scales server-side based on `storage_details.system_type`
+> + `iops`; encryption uses Oracle-managed keys. The design doc's
+> "200 GB SSD" target maps to the default storage profile of the
+> `OCI_OPTIMIZED_STORAGE` system type, which sizes capacity automatically.
+> Revisit if Oracle adds explicit knobs.
 
 ## Inputs
 
 See `variables.tf` for the full contract. Required: `compartment_id`,
-`name_prefix`, `subnet_id`, `nsg_id`, `kms_key_id`,
-`admin_password_secret_id`, `ocpu_count`, `memory_gb`, `storage_gb`.
+`name_prefix`, `subnet_id`, `nsg_id`, `admin_password_secret_id`,
+`ocpu_count`, `memory_gb`.
 
 ## Outputs
 

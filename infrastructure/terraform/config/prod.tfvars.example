@@ -21,7 +21,6 @@ ssh_public_key = "ssh-ed25519 AAAA...REPLACE"
 # Mew sizing — full prod from design doc Section 7.
 mew_ocpu_count             = 16
 mew_memory_gb              = 128
-mew_storage_gb             = 200
 mew_instance_count         = 2 # primary + standby = HA
 mew_backup_retention_days  = 30
 mew_enable_public_endpoint = true
