@@ -152,4 +152,12 @@ regexes = [
     '''ak-EXAMPLE[A-Z0-9]*''',
     '''as-EXAMPLE[A-Z0-9]*''',
     '''ocid1\.tenancy\.oc1\.\.exampleexample''',
+
+    # OCI Database for PostgreSQL provider enum. The literal string
+    # `VAULT_SECRET` tells the OCI provider that the admin password is
+    # sourced from an OCI Vault secret (referenced by `secret_id`) rather
+    # than supplied inline. It is a constant defined by Oracle, not a
+    # credential. Trips the default `hashicorp-tf-password` rule because
+    # it appears as `password_type = "VAULT_SECRET"`.
+    '''VAULT_SECRET''',
 ]

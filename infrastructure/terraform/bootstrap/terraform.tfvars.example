@@ -1,0 +1,20 @@
+###############################################################################
+# Bootstrap tfvars — copy to terraform.tfvars (gitignored) and fill in.
+#
+# Run from this directory:
+#   terraform init
+#   terraform apply
+#
+# After apply, copy the outputs into environments/dev/terraform.tfvars and
+# environments/prod/terraform.tfvars, then init those environments with the
+# OCI Object Storage backend pointing at the bucket created here.
+###############################################################################
+
+# OCID from `oci iam region-subscription list` is *not* the tenancy OCID;
+# fetch it from `~/.oci/config` (the `tenancy=` line) or the OCI console.
+tenancy_ocid = "ocid1.tenancy.oc1..REPLACE"
+
+# Override only if you need to.
+# region              = "us-sanjose-1"
+# name_prefix         = "kanto"
+# tfstate_bucket_name = "kanto-tfstate-shared"

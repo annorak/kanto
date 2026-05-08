@@ -1,0 +1,13 @@
+###############################################################################
+# Prod backend — copy to config/prod-backend.hcl (gitignored) and fill in.
+###############################################################################
+
+bucket   = "kanto-tfstate-shared"
+key      = "envs/prod/terraform.tfstate"
+region   = "us-sanjose-1"
+endpoint = "https://<TENANCY_NAMESPACE>.compat.objectstorage.us-sanjose-1.oraclecloud.com"
+
+skip_region_validation      = true
+skip_credentials_validation = true
+skip_metadata_api_check     = true
+force_path_style            = true

@@ -1,0 +1,36 @@
+###############################################################################
+# Prod environment — copy to config/prod.tfvars (gitignored) and fill in.
+###############################################################################
+
+environment    = "prod"
+tenancy_ocid   = "ocid1.tenancy.oc1..REPLACE"
+compartment_id = "ocid1.compartment.oc1..REPLACE" # bootstrap output: compartment_prod_id
+
+# Networking
+vcn_cidr       = "10.30.0.0/16"
+operator_cidrs = [] # tighten to CI runners + on-call IPs
+
+# Modal egress allowlist for the public Mew NLB. Pull from Modal docs
+# (modal.com/docs/guide/network) at apply time. Replace 0.0.0.0/0; do not ship.
+modal_egress_cidrs = [
+  "0.0.0.0/0", # PLACEHOLDER
+]
+
+ssh_public_key = "ssh-ed25519 AAAA...REPLACE"
+
+# Mew sizing — full prod from design doc Section 7.
+mew_ocpu_count             = 16
+mew_memory_gb              = 128
+mew_storage_gb             = 200
+mew_instance_count         = 2 # primary + standby = HA
+mew_backup_retention_days  = 30
+mew_enable_public_endpoint = true
+
+# OKE sizing.
+oke_node_ocpus     = 8
+oke_node_memory_gb = 32
+oke_node_count     = 3
+oke_node_count_min = 3
+oke_node_count_max = 6
+
+app_log_retention_days = 90

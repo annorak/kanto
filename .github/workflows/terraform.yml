@@ -1,0 +1,102 @@
+# =============================================================================
+# Kanto Terraform CI — fmt, validate, lint, security scan
+# =============================================================================
+#
+# Runs on every PR and every push to main. Discovers every Terraform working
+# directory under infrastructure/terraform/ via the matrix and validates each
+# in isolation. No `terraform apply` from CI; apply is operator-driven from a
+# laptop with OCI credentials.
+# =============================================================================
+
+name: terraform
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infrastructure/terraform/**"
+      - ".github/workflows/terraform.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "infrastructure/terraform/**"
+      - ".github/workflows/terraform.yml"
+
+concurrency:
+  group: terraform-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.2"
+      - name: terraform fmt -check
+        run: terraform -chdir=infrastructure/terraform fmt -check -recursive
+
+  validate:
+    name: validate (${{ matrix.dir }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        dir:
+          - infrastructure/terraform              # the root entrypoint
+          - infrastructure/terraform/bootstrap    # one-time, local-state
+          - infrastructure/terraform/modules/network
+          - infrastructure/terraform/modules/vault
+          - infrastructure/terraform/modules/object_storage
+          - infrastructure/terraform/modules/streaming
+          - infrastructure/terraform/modules/iam
+          - infrastructure/terraform/modules/mew
+          - infrastructure/terraform/modules/oke
+          - infrastructure/terraform/modules/logging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.2"
+      - name: terraform init
+        run: terraform -chdir=${{ matrix.dir }} init -backend=false
+      - name: terraform validate
+        run: terraform -chdir=${{ matrix.dir }} validate
+
+  tflint:
+    name: tflint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+      - name: Init tflint (OCI ruleset)
+        run: tflint --init
+        working-directory: infrastructure/terraform
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run tflint
+        run: tflint --recursive --minimum-failure-severity=warning
+        working-directory: infrastructure/terraform
+
+  tfsec:
+    name: tfsec
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: tfsec scan
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: infrastructure/terraform
+          # tfsec returns non-zero on HIGH/CRITICAL by default; warn on MEDIUM.
+          additional_args: --minimum-severity HIGH

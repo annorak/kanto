@@ -1,0 +1,25 @@
+###############################################################################
+# Dev backend — copy to config/dev-backend.hcl (gitignored) and fill in.
+#
+# State is held in OCI Object Storage via its S3-compat endpoint. After the
+# bootstrap step, `tfstate_bucket_name` and `tfstate_namespace` come from
+# bootstrap's outputs; paste them in.
+#
+# Apply with:
+#   terraform init -reconfigure -backend-config=config/dev-backend.hcl
+#   terraform apply -var-file=config/dev.tfvars
+###############################################################################
+
+bucket   = "kanto-tfstate-shared"
+key      = "envs/dev/terraform.tfstate"
+region   = "us-sanjose-1"
+endpoint = "https://<TENANCY_NAMESPACE>.compat.objectstorage.us-sanjose-1.oraclecloud.com"
+
+skip_region_validation      = true
+skip_credentials_validation = true
+skip_metadata_api_check     = true
+force_path_style            = true
+
+# Provide AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in your shell. These
+# are a Customer Secret Key on your OCI user (Identity → Users → Customer
+# Secret Keys), NOT the OCI API key.
