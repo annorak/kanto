@@ -45,14 +45,14 @@ package = false
 [tool.uv.workspace]
 # Member packages are added as services and libs come online. The
 # anticipated members are:
-#   libs/kanto-common              <- Task 1
+#   libs/kanto-commons              <- Task 1
 #   infrastructure/migrations      <- Task 3
 #   services/growlithe             <- Task 4
 #   services/snorlax               <- Task 5
 #   services/ditto                 <- Task 7 (Modal)
 #   services/alakazam              <- Task 6
 #   services/chatot                <- Task 8
-members = ["libs/kanto-common", "infrastructure/migrations"]
+members = ["libs/kanto-commons", "infrastructure/migrations"]
 exclude = []
 
 # -----------------------------------------------------------------------------

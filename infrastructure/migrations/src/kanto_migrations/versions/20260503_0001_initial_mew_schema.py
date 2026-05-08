@@ -77,7 +77,7 @@ depends_on: str | Sequence[str] | None = None
 # ---------------------------------------------------------------------------
 # Status values (kept as Python tuples so the CHECK lists below stay
 # in sync with the ``IsolateStatus`` / ``AlertStatus`` enums in
-# kanto-common). Future status additions: add a new migration that
+# kanto-commons). Future status additions: add a new migration that
 # DROPs and re-creates the CHECK with the expanded set.
 # ---------------------------------------------------------------------------
 

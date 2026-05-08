@@ -30,7 +30,7 @@ import logging
 import os
 import sys
 
-from kanto_common.config import Environment, MewSettings
+from kanto_commons.config import Environment, MewSettings
 from kanto_migrations.seed import seed
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

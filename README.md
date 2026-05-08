@@ -23,7 +23,7 @@ decision live in [`docs/design.md`](docs/design.md). Read that first.
 ├── infrastructure/
 │   └── terraform/                     OCI Terraform modules (VCN, OKE, OS, Streaming, Mew)
 ├── libs/
-│   └── kanto-common/                  Shared Python code across services
+│   └── kanto-commons/                  Shared Python code across services
 ├── scripts/                           Operational and pre-commit helper scripts
 ├── services/
 │   ├── alakazam/                      Scorer (k-NN + novelty score) — OKE

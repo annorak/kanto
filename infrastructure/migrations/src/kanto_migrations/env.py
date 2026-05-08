@@ -1,7 +1,7 @@
 """Alembic environment.
 
 Both online and offline modes are supported. Connection details come
-exclusively from :class:`kanto_common.config.MewSettings` (i.e. from
+exclusively from :class:`kanto_commons.config.MewSettings` (i.e. from
 ``KANTO_MEW_*`` environment variables) via
 :mod:`kanto_migrations._url`. No DSN ever lives in ``alembic.ini``;
 that file holds tooling configuration only.

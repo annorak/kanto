@@ -49,11 +49,12 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:
-          # uv.lock is intentionally not committed (.gitignore documents why),
-          # so we don't pass cache-dependency-glob — setup-uv would error if
-          # the glob matched nothing. Caching still applies to the uv tool
-          # itself; package resolution runs fresh each CI run.
           enable-cache: true
+          # uv.lock is intentionally not committed (.gitignore documents why).
+          # setup-uv's default cache-dependency-glob is **/uv.lock and errors
+          # when nothing matches. Key the cache off the dependency manifests
+          # we actually commit — pyproject.toml in the workspace and packages.
+          cache-dependency-glob: "**/pyproject.toml"
 
       - name: Sync dev tooling
         run: uv sync --group dev
@@ -67,8 +68,8 @@ jobs:
       - name: Run pre-commit on all files
         run: uv run pre-commit run --all-files --show-diff-on-failure
 
-  test-kanto-common:
-    name: test (kanto-common)
+  test-kanto-commons:
+    name: test (kanto-commons)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -83,21 +84,22 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:
-          # uv.lock is intentionally not committed (.gitignore documents why),
-          # so we don't pass cache-dependency-glob — setup-uv would error if
-          # the glob matched nothing. Caching still applies to the uv tool
-          # itself; package resolution runs fresh each CI run.
           enable-cache: true
+          # uv.lock is intentionally not committed (.gitignore documents why).
+          # setup-uv's default cache-dependency-glob is **/uv.lock and errors
+          # when nothing matches. Key the cache off the dependency manifests
+          # we actually commit — pyproject.toml in the workspace and packages.
+          cache-dependency-glob: "**/pyproject.toml"
 
       - name: Sync workspace
         run: uv sync --all-packages --group dev
 
       - name: Run unit tests
-        working-directory: libs/kanto-common
+        working-directory: libs/kanto-commons
         run: uv run pytest tests/unit/ -p no:cacheprovider
 
       - name: Run integration tests (testcontainers)
-        working-directory: libs/kanto-common
+        working-directory: libs/kanto-commons
         run: uv run pytest tests/integration/ -m integration -p no:cacheprovider --no-cov
 
   test-migrations:
@@ -119,11 +121,12 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:
-          # uv.lock is intentionally not committed (.gitignore documents why),
-          # so we don't pass cache-dependency-glob — setup-uv would error if
-          # the glob matched nothing. Caching still applies to the uv tool
-          # itself; package resolution runs fresh each CI run.
           enable-cache: true
+          # uv.lock is intentionally not committed (.gitignore documents why).
+          # setup-uv's default cache-dependency-glob is **/uv.lock and errors
+          # when nothing matches. Key the cache off the dependency manifests
+          # we actually commit — pyproject.toml in the workspace and packages.
+          cache-dependency-glob: "**/pyproject.toml"
 
       - name: Sync workspace
         run: uv sync --all-packages --group dev

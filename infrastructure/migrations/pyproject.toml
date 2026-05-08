@@ -27,7 +27,7 @@ dependencies = [
     # migration bodies are pure SQL. Pulled at the latest 2.x.
     "sqlalchemy>=2.0,<3",
     "psycopg[binary]>=3.2,<4",
-    "kanto-common",
+    "kanto-commons",
 ]
 
 [dependency-groups]
@@ -48,7 +48,7 @@ packages = ["src/kanto_migrations"]
 include = ["src/kanto_migrations/py.typed"]
 
 [tool.uv.sources]
-kanto-common = { workspace = true }
+kanto-commons = { workspace = true }
 
 # -----------------------------------------------------------------------------
 # pytest — package-local overrides on top of the repo-root config.

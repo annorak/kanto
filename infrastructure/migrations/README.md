@@ -310,7 +310,7 @@ Any PR that adds or modifies a migration must pass:
   shape assertions.
 * `pytest infrastructure/migrations/tests/test_down_migration.py`
   — upgrade → downgrade → upgrade is idempotent.
-* `pytest infrastructure/migrations/tests/test_kanto_common_against_schema.py`
-  — every kanto-common repository method exercises the new schema.
+* `pytest infrastructure/migrations/tests/test_kanto_commons_against_schema.py`
+  — every kanto-commons repository method exercises the new schema.
 
 Coverage gate is enforced at 90 percent.

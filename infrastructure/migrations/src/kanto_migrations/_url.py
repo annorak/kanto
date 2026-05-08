@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 
-from kanto_common.config import MewSettings
+from kanto_commons.config import MewSettings
 
 
 def to_sqlalchemy_url(libpq_url: str) -> str:
@@ -17,7 +17,7 @@ def to_sqlalchemy_url(libpq_url: str) -> str:
 
     SQLAlchemy 2.x defaults to psycopg2 for the bare ``postgresql://``
     scheme; we must say ``postgresql+psycopg://`` explicitly to pick
-    psycopg3 — the same driver kanto-common uses at runtime.
+    psycopg3 — the same driver kanto-commons uses at runtime.
     """
     if libpq_url.startswith("postgresql+psycopg://"):
         return libpq_url

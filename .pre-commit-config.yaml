@@ -116,7 +116,7 @@ repos:
         # their source paths to this command. The trade-off: we re-check
         # all packages on any Python change, but the suite is small and
         # mypy caches aggressively.
-        entry: uv run mypy libs/kanto-common/src/kanto_common
+        entry: uv run mypy libs/kanto-commons/src/kanto_commons
         language: system
         types: [python]
         pass_filenames: false
