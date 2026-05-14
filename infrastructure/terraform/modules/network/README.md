@@ -1,31 +1,29 @@
 # network module
 
-A single VCN with the four subnets Kanto needs:
+VNet, subnets, NSG, and the private DNS zone Postgres Flexible Server
+registers in.
 
-| Subnet      | CIDR within /16 | Purpose                                          |
-| ----------- | --------------- | ------------------------------------------------ |
-| `public`    | `.0.0/24`       | OKE API endpoint, public load balancers          |
-| `nodes`     | `.1.0/24`       | OKE worker node primary VNICs                    |
-| `pods`      | `.16.0/20`      | OKE pod IPs (VCN-Native CNI)                     |
-| `mew`       | `.32.0/28`      | OCI Database for PostgreSQL endpoint             |
+| Subnet     | CIDR (within /16) | Purpose                                         |
+| ---------- | ----------------- | ----------------------------------------------- |
+| nodes      | `.1.0/24`         | AKS worker node VNICs                           |
+| pods       | `.16.0/20`        | AKS pod IPs (Azure CNI)                         |
+| lb         | `.0.0/26`         | Public-facing Service LoadBalancers (Task 5+)   |
+| mew        | `.32.0/28`        | Postgres Flexible Server delegated subnet       |
 
-Plus an internet gateway, NAT gateway, service gateway (for free Object Storage
-traffic on the OCI backbone), and four network security groups: OKE API
-endpoint, workers, public load balancer, Mew Postgres.
+The `mew` subnet is delegated to `Microsoft.DBforPostgreSQL/flexibleServers`,
+so no other resource can use it. The private DNS zone is linked to the VNet
+without registration_enabled — Flexible Server registers itself.
+
+The `nodes` subnet has service endpoints for Storage, Key Vault, and Event
+Hubs so managed-service traffic from worker nodes stays on the Microsoft
+backbone and avoids NAT egress cost.
 
 ## Inputs
 
-| Name                       | Type           | Required | Description                                                                                              |
-| -------------------------- | -------------- | -------- | -------------------------------------------------------------------------------------------------------- |
-| `compartment_id`           | `string`       | yes      | Compartment for all networking resources.                                                                |
-| `name_prefix`              | `string`       | yes      | Resource name prefix, e.g. `kanto-dev`.                                                                  |
-| `vcn_cidr`                 | `string`       | yes      | A `/16` block. Must not overlap any other Kanto environment.                                             |
-| `operator_cidrs`           | `list(string)` | no       | CIDRs allowed to reach the OKE Kubernetes API on TCP/6443. Empty closes it down.                         |
-| `mew_public_ingress_cidrs` | `list(string)` | no       | CIDRs allowed to reach the Mew Postgres endpoint on TCP/5432. Used to allowlist Modal in prod.           |
-| `freeform_tags`            | `map(string)`  | no       | Tags applied to every resource.                                                                          |
+See `variables.tf`. Required: `resource_group_name`, `region`,
+`name_prefix`, `vnet_cidr`, `ssh_public_key`.
 
 ## Outputs
 
-`vcn_id`, `subnet_public_id`, `subnet_nodes_id`, `subnet_pods_id`,
-`subnet_mew_id`, `nsg_oke_api_id`, `nsg_oke_workers_id`, `nsg_lb_id`,
-`nsg_mew_id`.
+`vnet_id`, `vnet_name`, `subnet_{nodes,pods,lb,mew}_id`,
+`private_dns_zone_postgres_{id,name}`.

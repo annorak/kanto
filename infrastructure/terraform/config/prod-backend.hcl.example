@@ -2,17 +2,9 @@
 # Prod backend — copy to config/prod-backend.hcl (gitignored) and fill in.
 ###############################################################################
 
-bucket = "kanto-tfstate-shared"
-key    = "envs/prod/terraform.tfstate"
-region = "us-sanjose-1"
+resource_group_name  = "kanto-shared-rg"
+storage_account_name = "kantotfstate<RANDOM>"
+container_name       = "tfstate"
+key                  = "envs/prod/terraform.tfstate"
 
-endpoints = {
-  s3 = "https://<TENANCY_NAMESPACE>.compat.objectstorage.us-sanjose-1.oraclecloud.com"
-}
-
-skip_region_validation      = true
-skip_credentials_validation = true
-skip_requesting_account_id  = true
-skip_metadata_api_check     = true
-skip_s3_checksum            = true
-use_path_style              = true
+use_azuread_auth = true

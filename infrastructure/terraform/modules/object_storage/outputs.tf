@@ -1,20 +1,28 @@
-output "namespace" {
-  value = data.oci_objectstorage_namespace.tenancy.namespace
+output "storage_account_id" {
+  value = azurerm_storage_account.this.id
 }
 
-output "bucket_names" {
-  description = "Map of role -> bucket name."
-  value       = { for k, b in oci_objectstorage_bucket.this : k => b.name }
+output "storage_account_name" {
+  value = azurerm_storage_account.this.name
 }
 
-output "bucket_proteins" {
-  value = oci_objectstorage_bucket.this["proteins"].name
+output "blob_endpoint" {
+  value = azurerm_storage_account.this.primary_blob_endpoint
 }
 
-output "bucket_embeddings" {
-  value = oci_objectstorage_bucket.this["embeddings"].name
+output "container_names" {
+  description = "Map of role -> container name."
+  value       = { for k, c in azurerm_storage_container.this : k => c.name }
 }
 
-output "bucket_metadata" {
-  value = oci_objectstorage_bucket.this["metadata"].name
+output "proteins_container_id" {
+  value = azurerm_storage_container.this["proteins"].resource_manager_id
+}
+
+output "embeddings_container_id" {
+  value = azurerm_storage_container.this["embeddings"].resource_manager_id
+}
+
+output "metadata_container_id" {
+  value = azurerm_storage_container.this["metadata"].resource_manager_id
 }

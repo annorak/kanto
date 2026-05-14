@@ -6,34 +6,30 @@ output "region" {
   value = var.region
 }
 
-output "tenancy_ocid" {
-  value = var.tenancy_ocid
+output "subscription_id" {
+  value = var.subscription_id
 }
 
-output "compartment_id" {
-  value = var.compartment_id
+output "resource_group_name" {
+  value = data.azurerm_resource_group.this.name
 }
 
-output "vcn_id" {
-  value = module.network.vcn_id
+output "vnet_id" {
+  value = module.network.vnet_id
 }
 
-output "oke_cluster_id" {
-  description = "Use with `oci ce cluster create-kubeconfig` to get a kubeconfig."
-  value       = module.oke.cluster_id
+output "aks_cluster_name" {
+  description = "Use with `az aks get-credentials -g <rg> -n <name>` to fetch a kubeconfig."
+  value       = module.aks.cluster_name
 }
 
-output "oke_kubernetes_version" {
-  value = module.oke.cluster_kubernetes_version
+output "aks_kubernetes_version" {
+  value = module.aks.cluster_kubernetes_version
 }
 
-output "mew_host" {
-  description = "Private IP of the Mew Postgres primary."
-  value       = module.mew.private_endpoint_host
-}
-
-output "mew_port" {
-  value = module.mew.port
+output "mew_fqdn" {
+  description = "Postgres Flexible Server FQDN. Routable from inside the VNet."
+  value       = module.mew.fqdn
 }
 
 output "mew_database" {
@@ -45,36 +41,41 @@ output "mew_admin_username" {
 }
 
 output "mew_password_secret_id" {
-  description = "Vault secret OCID; resolve with `oci vault secret get`."
-  value       = module.vault.mew_password_secret_id
+  description = "Key Vault secret ID. Resolve with `az keyvault secret show --id <value>`."
+  value       = module.key_vault.mew_password_secret_id
 }
 
-output "mew_public_endpoint" {
-  description = "Public NLB IP (prod). Null when mew_enable_public_endpoint is false."
-  value       = module.mew.public_endpoint_ip
+output "event_hubs_namespace" {
+  value = module.event_hubs.namespace_name
 }
 
-output "kafka_bootstrap_servers" {
-  value = module.streaming.kafka_bootstrap_servers
+output "event_hubs_kafka_bootstrap" {
+  description = "Kafka-compatible endpoint: <namespace>.servicebus.windows.net:9093"
+  value       = module.event_hubs.kafka_bootstrap_servers
 }
 
-output "object_storage_namespace" {
-  value = module.object_storage.namespace
+output "object_storage_account_name" {
+  value = module.object_storage.storage_account_name
 }
 
-output "object_storage_buckets" {
-  value = module.object_storage.bucket_names
+output "object_storage_containers" {
+  value = module.object_storage.container_names
 }
 
-output "vault_id" {
-  value = module.vault.vault_id
+output "key_vault_uri" {
+  value = module.key_vault.vault_uri
 }
 
-output "modal_user_id" {
-  description = "OCI IAM user for the Modal-side Ditto function. Operator uploads an API key to this user."
-  value       = module.iam.modal_user_id
+output "log_analytics_workspace_id" {
+  value = module.logging.workspace_id
 }
 
-output "log_group_id" {
-  value = module.logging.log_group_id
+output "aks_workload_identity_client_id" {
+  description = "Client ID of the AKS workload-identity user-assigned managed identity. Annotate K8s service accounts with this so pods can fetch Azure AD tokens."
+  value       = module.iam.aks_workload_identity_client_id
+}
+
+output "modal_identity_client_id" {
+  description = "Client ID of the Modal-side federated managed identity. Empty when modal_oidc_issuer is empty (dev)."
+  value       = module.iam.modal_identity_client_id
 }

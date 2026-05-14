@@ -2,13 +2,13 @@ terraform {
   required_version = ">= 1.6"
 
   required_providers {
-    oci = {
-      source  = "oracle/oci"
-      version = "~> 8.12"
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.10"
     }
-    time = {
-      source  = "hashicorp/time"
-      version = "~> 0.12"
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
     }
   }
 }

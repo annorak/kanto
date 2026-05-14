@@ -1,34 +1,24 @@
-output "compartment_kanto_id" {
-  description = "OCID of the top-level kanto compartment."
-  value       = oci_identity_compartment.kanto.id
+output "resource_group_shared_name" {
+  description = "Resource group holding the tfstate storage account."
+  value       = azurerm_resource_group.shared.name
 }
 
-output "compartment_shared_id" {
-  description = "OCID of the shared compartment (Terraform state lives here)."
-  value       = oci_identity_compartment.shared.id
+output "resource_group_dev_name" {
+  description = "Resource group for the dev environment. Passed into the root module as `resource_group_name`."
+  value       = azurerm_resource_group.dev.name
 }
 
-output "compartment_network_id" {
-  description = "OCID of the network compartment."
-  value       = oci_identity_compartment.network.id
+output "resource_group_prod_name" {
+  description = "Resource group for the prod environment."
+  value       = azurerm_resource_group.prod.name
 }
 
-output "compartment_dev_id" {
-  description = "OCID of the dev compartment."
-  value       = oci_identity_compartment.dev.id
+output "tfstate_storage_account_name" {
+  description = "Storage account holding Terraform state. Paste into config/<env>-backend.hcl."
+  value       = azurerm_storage_account.tfstate.name
 }
 
-output "compartment_prod_id" {
-  description = "OCID of the prod compartment."
-  value       = oci_identity_compartment.prod.id
-}
-
-output "tfstate_bucket_name" {
-  description = "Name of the Object Storage bucket holding Terraform state."
-  value       = oci_objectstorage_bucket.tfstate.name
-}
-
-output "tfstate_namespace" {
-  description = "Object Storage namespace for the tenancy."
-  value       = data.oci_objectstorage_namespace.tenancy.namespace
+output "tfstate_container_name" {
+  description = "Blob container inside the tfstate storage account."
+  value       = azurerm_storage_container.tfstate.name
 }

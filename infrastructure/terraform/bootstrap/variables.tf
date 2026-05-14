@@ -1,22 +1,21 @@
-variable "tenancy_ocid" {
-  description = "Tenancy OCID. Top-level kanto compartment is created directly under this."
+variable "subscription_id" {
+  description = "Azure subscription OCID. The Kanto resource groups, the tfstate storage account, and every downstream resource live in this subscription."
+  type        = string
+}
+
+variable "tenant_id" {
+  description = "Azure AD tenant ID."
   type        = string
 }
 
 variable "region" {
-  description = "OCI home region."
+  description = "Azure region for every Kanto resource. eastus is the default — lowest latency to Modal."
   type        = string
-  default     = "us-sanjose-1"
+  default     = "eastus"
 }
 
 variable "name_prefix" {
-  description = "Prefix used for every resource name. Keep short."
+  description = "Prefix used in every resource name. Keep short — Azure storage accounts cap at 24 chars total."
   type        = string
   default     = "kanto"
-}
-
-variable "tfstate_bucket_name" {
-  description = "Object Storage bucket that will hold remote state for all environments."
-  type        = string
-  default     = "kanto-tfstate-shared"
 }

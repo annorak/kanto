@@ -1,35 +1,62 @@
-variable "tenancy_ocid" {
-  description = "Tenancy OCID. Dynamic groups, IAM users, and IAM groups must live at the tenancy root."
+variable "resource_group_name" {
+  description = "Resource group for the managed identities."
   type        = string
 }
 
-variable "compartment_id" {
-  description = "Env compartment OCID. Policies are scoped to this compartment so a dev policy cannot grant access to prod."
+variable "region" {
+  description = "Azure region for the managed identities."
   type        = string
 }
 
-variable "environment" {
-  description = "Environment name (e.g. 'dev', 'prod'). Used in identity resource names; must be unique per env."
+variable "name_prefix" {
+  description = "Resource name prefix, e.g. 'kanto-dev'."
   type        = string
 }
 
-variable "freeform_tags" {
+variable "proteins_container_id" {
+  description = "Resource Manager ID of the proteins blob container."
+  type        = string
+}
+
+variable "embeddings_container_id" {
+  description = "Resource Manager ID of the embeddings blob container."
+  type        = string
+}
+
+variable "metadata_container_id" {
+  description = "Resource Manager ID of the metadata blob container."
+  type        = string
+}
+
+variable "key_vault_id" {
+  description = "Key Vault holding etcd-encryption key, Mew password, and placeholder secrets."
+  type        = string
+}
+
+variable "event_hubs_namespace_id" {
+  description = "Event Hubs namespace ID. AKS pods get Data Sender + Receiver across the whole namespace."
+  type        = string
+}
+
+variable "event_hubs_embedded_id" {
+  description = "Event Hub ID for `kanto.embedded`. Modal gets Data Sender scoped to this hub only."
+  type        = string
+}
+
+variable "modal_oidc_issuer" {
+  description = "Modal's OIDC issuer URL. Empty string disables federation (dev). When non-empty, the modal federated credential is created."
+  type        = string
+  default     = ""
+}
+
+variable "modal_oidc_subject" {
+  description = "Modal's OIDC subject claim. Required when modal_oidc_issuer is non-empty."
+  type        = string
+  default     = ""
+}
+
+variable "tags" {
   description = "Tags applied to every resource."
   type        = map(string)
   default     = {}
-}
-
-variable "bucket_proteins" {
-  description = "Name of the proteins bucket. Modal gets read-only on this."
-  type        = string
-}
-
-variable "bucket_embeddings" {
-  description = "Name of the embeddings bucket. Modal gets write here; OKE workers read."
-  type        = string
-}
-
-variable "bucket_metadata" {
-  description = "Name of the metadata bucket. Growlithe (on OKE) writes; Modal does not access."
-  type        = string
 }

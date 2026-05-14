@@ -1,63 +1,68 @@
-data "oci_objectstorage_namespace" "tenancy" {
-  compartment_id = var.compartment_id
+# Storage account names: 3-24 lowercase-alphanumeric, globally unique.
+# Random suffix avoids the operator inventing one.
+resource "random_id" "suffix" {
+  byte_length = 4
 }
 
-resource "oci_objectstorage_bucket" "this" {
-  for_each = local.buckets
+resource "azurerm_storage_account" "this" {
+  name                = "kanto${var.environment}data${random_id.suffix.hex}"
+  resource_group_name = var.resource_group_name
+  location            = var.region
 
-  compartment_id = var.compartment_id
-  namespace      = data.oci_objectstorage_namespace.tenancy.namespace
-  name           = "kanto-${each.key}-${var.environment}"
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+  account_kind             = "StorageV2"
+  access_tier              = "Hot"
+  min_tls_version          = "TLS1_2"
 
-  # Per Task 2 spec section 8: encryption at rest with OCI-managed keys.
-  # Bring-your-own-key would require granting the Object Storage service
-  # principal use-keys access to our Vault, which is more setup than the
-  # spec asks for. Default encryption is FIPS-140-2 validated AES-256.
-  access_type   = "NoPublicAccess"
-  versioning    = "Enabled"
-  freeform_tags = var.freeform_tags
-}
+  public_network_access_enabled   = true # Modal reaches blobs from outside the VNet
+  allow_nested_items_to_be_public = false
+  shared_access_key_enabled       = true
 
-# OCI Object Storage runs lifecycle transitions under a service principal
-# ("objectstorage-<region>"). Without this IAM grant, creating a lifecycle
-# policy on a bucket returns 400-InsufficientServicePermissions. Scoped to
-# this compartment only.
-resource "oci_identity_policy" "lifecycle_service_access" {
-  compartment_id = var.compartment_id
-  name           = "kanto-${var.environment}-objectstorage-lifecycle"
-  description    = "Allows the Object Storage service principal to manage objects so lifecycle policies (archive/delete) can run."
-  freeform_tags  = var.freeform_tags
-
-  statements = [
-    "Allow service objectstorage-${var.region} to manage object-family in compartment id ${var.compartment_id}",
-  ]
-}
-
-# IAM propagation is eventually-consistent; without a wait the lifecycle
-# resource can fire before the policy is enforced and the API returns
-# InsufficientServicePermissions. Mirrors the vault.kms_policy_propagation
-# pattern.
-resource "time_sleep" "lifecycle_policy_propagation" {
-  depends_on      = [oci_identity_policy.lifecycle_service_access]
-  create_duration = "60s"
-}
-
-# Lifecycle: archive after N days for buckets that opt in. The metadata
-# bucket sets archive_days=0 and gets no rule.
-resource "oci_objectstorage_object_lifecycle_policy" "archive" {
-  for_each = { for k, v in local.buckets : k => v if v.archive_days > 0 }
-
-  namespace = data.oci_objectstorage_namespace.tenancy.namespace
-  bucket    = oci_objectstorage_bucket.this[each.key].name
-
-  rules {
-    name        = "archive-after-${each.value.archive_days}d"
-    action      = "ARCHIVE"
-    is_enabled  = true
-    target      = "objects"
-    time_amount = each.value.archive_days
-    time_unit   = "DAYS"
+  blob_properties {
+    versioning_enabled = true
+    delete_retention_policy {
+      days = 30
+    }
+    container_delete_retention_policy {
+      days = 30
+    }
   }
 
-  depends_on = [time_sleep.lifecycle_policy_propagation]
+  tags = var.tags
+}
+
+resource "azurerm_storage_container" "this" {
+  for_each = local.containers
+
+  name                  = "kanto-${each.key}-${var.environment}"
+  storage_account_id    = azurerm_storage_account.this.id
+  container_access_type = "private"
+}
+
+# Lifecycle: hot -> cool at hot_to_cool_days, cool -> archive at hot_to_archive_days
+# for proteins + embeddings. The metadata container stays Hot indefinitely.
+resource "azurerm_storage_management_policy" "this" {
+  storage_account_id = azurerm_storage_account.this.id
+
+  dynamic "rule" {
+    for_each = { for k, v in local.containers : k => v if v.archive }
+
+    content {
+      name    = "archive-${rule.key}"
+      enabled = true
+
+      filters {
+        prefix_match = ["kanto-${rule.key}-${var.environment}/"]
+        blob_types   = ["blockBlob"]
+      }
+
+      actions {
+        base_blob {
+          tier_to_cool_after_days_since_modification_greater_than    = var.hot_to_cool_days
+          tier_to_archive_after_days_since_modification_greater_than = var.hot_to_archive_days
+        }
+      }
+    }
+  }
 }

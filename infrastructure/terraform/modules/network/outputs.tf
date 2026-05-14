@@ -1,35 +1,31 @@
-output "vcn_id" {
-  value = oci_core_vcn.this.id
+output "vnet_id" {
+  value = azurerm_virtual_network.this.id
 }
 
-output "subnet_public_id" {
-  value = oci_core_subnet.public.id
+output "vnet_name" {
+  value = azurerm_virtual_network.this.name
 }
 
 output "subnet_nodes_id" {
-  value = oci_core_subnet.nodes.id
+  value = azurerm_subnet.nodes.id
 }
 
 output "subnet_pods_id" {
-  value = oci_core_subnet.pods.id
+  value = azurerm_subnet.pods.id
+}
+
+output "subnet_lb_id" {
+  value = azurerm_subnet.lb.id
 }
 
 output "subnet_mew_id" {
-  value = oci_core_subnet.mew.id
+  value = azurerm_subnet.mew.id
 }
 
-output "nsg_oke_api_id" {
-  value = oci_core_network_security_group.oke_api.id
+output "private_dns_zone_postgres_id" {
+  value = azurerm_private_dns_zone.postgres.id
 }
 
-output "nsg_oke_workers_id" {
-  value = oci_core_network_security_group.oke_workers.id
-}
-
-output "nsg_lb_id" {
-  value = oci_core_network_security_group.lb.id
-}
-
-output "nsg_mew_id" {
-  value = oci_core_network_security_group.mew.id
+output "private_dns_zone_postgres_name" {
+  value = azurerm_private_dns_zone.postgres.name
 }

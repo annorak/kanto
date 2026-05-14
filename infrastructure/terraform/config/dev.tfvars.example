@@ -2,31 +2,37 @@
 # Dev environment — copy to config/dev.tfvars (gitignored) and fill in.
 ###############################################################################
 
-environment    = "dev"
-tenancy_ocid   = "ocid1.tenancy.oc1..REPLACE"
-compartment_id = "ocid1.compartment.oc1..REPLACE" # bootstrap output: compartment_dev_id
+environment         = "dev"
+subscription_id     = "REPLACE-WITH-SUBSCRIPTION-GUID"
+tenant_id           = "REPLACE-WITH-TENANT-GUID"
+resource_group_name = "kanto-dev-rg" # bootstrap output: resource_group_dev_name
 
-# Networking
-vcn_cidr       = "10.20.0.0/16"
+# Networking — must not overlap any prod VNet if you ever peer them.
+vnet_cidr      = "10.20.0.0/16"
 operator_cidrs = ["203.0.113.10/32"] # your laptop / CI runner /32
 
 # Public key for emergency SSH to worker nodes:
-#   ssh-keygen -t ed25519 -f ~/.ssh/kanto-dev-oke -N ""
+#   ssh-keygen -t ed25519 -f ~/.ssh/kanto-dev-aks -N ""
 ssh_public_key = "ssh-ed25519 AAAA...REPLACE"
 
-# Mew sizing — small in dev. OCI Database for PostgreSQL requires
-# memory_gb in [32, 128] for the flex shape, so 32 is the smallest legal value.
-mew_ocpu_count             = 2
-mew_memory_gb              = 32
-mew_instance_count         = 1
-mew_backup_retention_days  = 7
-mew_enable_public_endpoint = false # Modal does not connect to dev
+# Mew sizing — B_Standard_B1ms is the 12-month free tier (1 vCPU / 2 GB RAM).
+# Upgrade to GP_Standard_D2s_v3 or larger before any real workload.
+mew_sku_name                  = "B_Standard_B1ms"
+mew_storage_gb                = 32
+mew_high_availability_enabled = false
+mew_backup_retention_days     = 7
 
-# OKE sizing — small in dev.
-oke_node_ocpus     = 4
-oke_node_memory_gb = 16
-oke_node_count     = 2
+# AKS sizing — small in dev. Standard_B2s = 2 vCPU / 4 GB, ~$30/mo each.
+aks_kubernetes_version = "1.31"
+aks_node_vm_size       = "Standard_B2s"
+aks_node_count         = 2
+
+# Modal federation is off in dev (the iam module only creates the federated
+# credential when modal_oidc_issuer is non-empty).
+modal_oidc_issuer  = ""
+modal_oidc_subject = ""
 
 # Logging / lifecycle defaults are fine for dev.
 # app_log_retention_days = 30
+# hot_to_cool_days       = 30
 # hot_to_archive_days    = 90

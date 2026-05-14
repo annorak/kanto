@@ -1,7 +1,12 @@
-output "log_group_id" {
-  value = oci_logging_log_group.app.id
+output "workspace_id" {
+  value = azurerm_log_analytics_workspace.this.id
 }
 
-output "app_log_id" {
-  value = oci_logging_log.app.id
+output "workspace_name" {
+  value = azurerm_log_analytics_workspace.this.name
+}
+
+output "workspace_customer_id" {
+  description = "Workspace's customer/cluster-id GUID, the value agents use to authenticate."
+  value       = azurerm_log_analytics_workspace.this.workspace_id
 }

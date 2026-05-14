@@ -1,20 +1,16 @@
-# Tenancy-wide audit logs (OCI Audit) capture every IAM, Vault, and Object
-# Storage operation by default — no resources are needed here for that.
-# This module covers the application-level log group used by:
-#   - the OKE Logging Operator (Task 5) for pod stdout/stderr
-#   - Modal's log forwarder (configured Modal-side in Task 7)
-resource "oci_logging_log_group" "app" {
-  compartment_id = var.compartment_id
-  display_name   = "${var.name_prefix}-app"
-  description    = "Application logs from Kanto services on OKE plus Modal-forwarded logs."
-  freeform_tags  = var.freeform_tags
-}
+# Log Analytics workspace. Single workspace per env receives:
+#   - AKS container insights + control-plane diagnostics (wired by aks module)
+#   - Modal-forwarded application logs (Modal-side config in Task 7)
+#   - Azure Monitor metrics for the Postgres server, Event Hubs, etc.
+#     (per-resource diagnostic_setting bindings are added by their owners.)
+resource "azurerm_log_analytics_workspace" "this" {
+  name                = "${var.name_prefix}-logs"
+  resource_group_name = var.resource_group_name
+  location            = var.region
 
-resource "oci_logging_log" "app" {
-  log_group_id       = oci_logging_log_group.app.id
-  display_name       = "${var.name_prefix}-app"
-  log_type           = "CUSTOM"
-  is_enabled         = true
-  retention_duration = var.app_log_retention_days
-  freeform_tags      = var.freeform_tags
+  sku               = "PerGB2018"
+  retention_in_days = var.app_log_retention_days
+  daily_quota_gb    = -1 # unbounded; free tier ingestion stays under 5 GB/day
+
+  tags = var.tags
 }

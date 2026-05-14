@@ -1,21 +1,32 @@
 ###############################################################################
-# Variables — the full configuration surface of the Kanto stack.
+# Variables — full configuration surface of the Azure Kanto stack.
 #
 # Values come from config/<env>.tfvars at apply time. Defaults below cover
 # the common case; per-env overrides go in the tfvars file.
 ###############################################################################
 
 # -----------------------------------------------------------------------------
-# Identity / region
+# Identity / region / scope
 # -----------------------------------------------------------------------------
 
-variable "tenancy_ocid" {
-  description = "Tenancy OCID. Required for dynamic groups and IAM users."
+variable "subscription_id" {
+  description = "Azure subscription ID hosting every Kanto resource."
   type        = string
 }
 
-variable "compartment_id" {
-  description = "Env compartment OCID, output by bootstrap (compartment_dev_id or compartment_prod_id)."
+variable "tenant_id" {
+  description = "Azure AD tenant ID. Used for managed-identity OIDC issuers."
+  type        = string
+}
+
+variable "region" {
+  description = "Azure region for every resource. eastus is the project default."
+  type        = string
+  default     = "eastus"
+}
+
+variable "resource_group_name" {
+  description = "Per-env resource group (bootstrap output `resource_group_<env>_name`)."
   type        = string
 }
 
@@ -29,107 +40,107 @@ variable "environment" {
   }
 }
 
-variable "region" {
-  description = "OCI region."
-  type        = string
-  default     = "us-sanjose-1"
-}
-
 # -----------------------------------------------------------------------------
 # Networking
 # -----------------------------------------------------------------------------
 
-variable "vcn_cidr" {
-  description = "VCN CIDR. Dev and prod must not overlap."
+variable "vnet_cidr" {
+  description = "Virtual Network CIDR. Dev and prod must not overlap."
   type        = string
 }
 
 variable "operator_cidrs" {
-  description = "CIDRs allowed to reach the OKE Kubernetes API endpoint."
-  type        = list(string)
-  default     = []
-}
-
-variable "modal_egress_cidrs" {
-  description = "Modal egress ranges allow-listed for the public Mew NLB. Empty unless mew_enable_public_endpoint is true."
+  description = "CIDRs allowed to reach the AKS Kubernetes API endpoint."
   type        = list(string)
   default     = []
 }
 
 variable "ssh_public_key" {
-  description = "Public SSH key authorized on OKE worker nodes for emergency access."
+  description = "Public SSH key authorized on AKS worker nodes for emergency access."
   type        = string
 }
 
 # -----------------------------------------------------------------------------
-# Mew (Postgres + pgvector)
+# Mew (Postgres Flexible Server + pgvector)
 # -----------------------------------------------------------------------------
 
-variable "mew_ocpu_count" {
-  description = "OCPUs per Mew instance."
-  type        = number
+variable "mew_sku_name" {
+  description = "Flexible Server SKU. `B_Standard_B1ms` is the 12-month free tier; `GP_Standard_D2s_v3` is the smallest General Purpose. Prod sizing in design doc Section 17."
+  type        = string
 }
 
-variable "mew_memory_gb" {
-  description = "Memory per Mew instance, GB."
+variable "mew_storage_gb" {
+  description = "Mew storage in GB. Flexible Server steps at 32, 64, 128, 256, 512..."
   type        = number
+  default     = 32
 }
 
-variable "mew_instance_count" {
-  description = "Mew instance count. 1 = single instance (dev). 2+ = HA (prod)."
-  type        = number
-  default     = 1
-}
-
-variable "mew_backup_retention_days" {
-  description = "Mew automatic backup retention, days."
-  type        = number
-  default     = 7
-}
-
-variable "mew_enable_public_endpoint" {
-  description = "Provision the public NLB so Modal can reach Mew. Set true in prod, false in dev."
+variable "mew_high_availability_enabled" {
+  description = "Zone-redundant HA standby (Flexible Server requires GP tier or higher). Use false in dev, true in prod."
   type        = bool
   default     = false
 }
 
+variable "mew_backup_retention_days" {
+  description = "Flexible Server backup retention. Min 7 / max 35."
+  type        = number
+  default     = 7
+}
+
 # -----------------------------------------------------------------------------
-# OKE
+# AKS
 # -----------------------------------------------------------------------------
 
-variable "oke_kubernetes_version" {
-  description = "OKE Kubernetes version. Verify with `oci ce cluster-options get --cluster-option-id all`."
+variable "aks_kubernetes_version" {
+  description = "AKS Kubernetes version. Verify with `az aks get-versions --location <region>`."
   type        = string
-  default     = "v1.35.2"
 }
 
-variable "oke_node_ocpus" {
-  description = "OCPUs per OKE worker node."
-  type        = number
+variable "aks_node_vm_size" {
+  description = "VM size for worker nodes. Standard_B2s is the smallest reasonable choice for dev."
+  type        = string
+  default     = "Standard_B2s"
 }
 
-variable "oke_node_memory_gb" {
-  description = "Memory per OKE worker node, GB."
-  type        = number
-}
-
-variable "oke_node_count" {
-  description = "Initial OKE worker node count."
+variable "aks_node_count" {
+  description = "Initial node count in the default node pool."
   type        = number
 }
 
 # -----------------------------------------------------------------------------
-# Logging / Object Storage lifecycle
+# Logging / storage lifecycle
 # -----------------------------------------------------------------------------
 
 variable "app_log_retention_days" {
-  description = "Application log retention. 30 dev / 90 prod is the convention."
+  description = "Application log retention in Log Analytics. 30 dev / 90 prod is the convention."
+  type        = number
+  default     = 30
+}
+
+variable "hot_to_cool_days" {
+  description = "Days before proteins/embeddings blobs transition Hot -> Cool tier."
   type        = number
   default     = 30
 }
 
 variable "hot_to_archive_days" {
-  description = "Days before proteins/embeddings buckets transition to Archive. Per design doc Section 17."
+  description = "Days before proteins/embeddings blobs transition to Archive. Per design doc Section 17."
   type        = number
   default     = 90
+}
+
+# -----------------------------------------------------------------------------
+# Modal workload-identity federation
+# -----------------------------------------------------------------------------
+
+variable "modal_oidc_issuer" {
+  description = "Modal's OIDC issuer URL. The Modal-side function presents a token signed by this issuer; Azure trusts it via the federated credential created in the iam module. Leave empty in dev — federation is only wired in prod."
+  type        = string
+  default     = ""
+}
+
+variable "modal_oidc_subject" {
+  description = "Subject claim Modal sends in the OIDC token (e.g. workspace/function identifier). Required when modal_oidc_issuer is non-empty."
+  type        = string
+  default     = ""
 }

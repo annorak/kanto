@@ -1,49 +1,41 @@
 # mew module
 
-OCI Database for PostgreSQL ("Mew") with pgvector enabled.
+Azure Database for PostgreSQL Flexible Server ("Mew") with pgvector
+enabled. VNet-integrated via subnet delegation + private DNS zone — no
+public endpoint, no IP allowlist. Modal reaches Mew via workload-identity
+federation and AAD-issued Postgres connection tokens (no long-lived
+credentials).
 
-The module creates a single `oci_psql_db_system` with daily backups
-(PITR is automatic), TLS required (OCI default), and a private endpoint
-inside the env's private subnet. **No `prevent_destroy`** on the DB system
-— initial create can fail (shape unavailability, quota issues), and
-`prevent_destroy` would block recovery. Data is protected via the
-automated backups + PITR.
+The module creates the Flexible Server plus the `kanto` logical database.
+**No `prevent_destroy`** on the server — initial create can fail (region
+capacity, quota), and `prevent_destroy` would block taint+replace. Data
+protection lives in the automated daily backups + PITR (configurable
+retention 7–35 days).
 
-pgvector is preinstalled in OCI Database for PostgreSQL 16, so no custom
-`oci_psql_configuration` is needed; the DB system uses the default
-configuration for the shape and version. The Task 3 migrations run
-`CREATE EXTENSION vector;` against the application database to enable it.
-
-Optionally, when `enable_public_endpoint = true` (prod only), a public OCI
-Network Load Balancer is created in the public subnet, forwarding TCP/5432
-to the DB system's private IP. The NSG attached to both the DB and NLB
-controls which CIDRs can reach 5432; populate
-`mew_public_ingress_cidrs` on the network module with Modal's documented
-egress ranges. **This is a deliberate v1 security tradeoff** documented in
-the design doc.
+pgvector is preinstalled in Postgres Flexible Server (PG 14+); no custom
+`azurerm_postgresql_flexible_server_configuration` resource is needed. The
+Task 3 migrations run `CREATE EXTENSION vector;` against the kanto
+database to enable it.
 
 ## Sizing
 
-| Env  | shape                  | OCPU | RAM   | instance_count | system_type            |
-| ---- | ---------------------- | ---- | ----- | -------------- | ---------------------- |
-| dev  | `VM.Standard.E4.Flex`  | 2    | 16 GB | 1              | `OCI_OPTIMIZED_STORAGE`|
-| prod | `VM.Standard.E4.Flex`  | 16   | 128GB | 2 (HA)         | `OCI_OPTIMIZED_STORAGE`|
+| Env  | sku_name                   | vCPU | RAM    | storage | HA              |
+| ---- | -------------------------- | ---- | ------ | ------- | --------------- |
+| dev  | `B_Standard_B1ms` (free)   | 1    | 2 GB   | 32 GB   | no              |
+| prod | `GP_Standard_D16s_v3`      | 16   | 64 GB  | 256 GB  | zone-redundant  |
 
-> **Storage size and BYOK:** OCI Database for PostgreSQL exposes neither
-> a `data_storage_size_in_gbs` argument nor a `kms_key_id` for the storage
-> layer. Capacity scales server-side based on `storage_details.system_type`
-> + `iops`; encryption uses Oracle-managed keys. The design doc's
-> "200 GB SSD" target maps to the default storage profile of the
-> `OCI_OPTIMIZED_STORAGE` system type, which sizes capacity automatically.
-> Revisit if Oracle adds explicit knobs.
+The dev SKU is the 12-month Azure free-tier line; after the free period
+expires it bills at ~$15/mo. For prod, design-doc Section 17 calls for
+16 vCPU / 128 GB. The 64 GB ceiling on `D16s_v3` is below the design
+target; switch to `MO_Standard_E16ds_v5` (16 vCPU / 128 GB memory-
+optimised) before going to production.
 
 ## Inputs
 
-See `variables.tf` for the full contract. Required: `compartment_id`,
-`name_prefix`, `subnet_id`, `nsg_id`, `admin_password_secret_id`,
-`ocpu_count`, `memory_gb`.
+See `variables.tf`. Required: `resource_group_name`, `region`,
+`name_prefix`, `subnet_id`, `private_dns_zone_id`, `admin_password`,
+`admin_password_secret_id`, `sku_name`.
 
 ## Outputs
 
-`db_system_id`, `private_endpoint_fqdn`, `private_endpoint_host`, `port`,
-`database_name`, `admin_username`, `public_endpoint_ip` (null when no NLB).
+`server_id`, `fqdn`, `port`, `database_name`, `admin_username`.

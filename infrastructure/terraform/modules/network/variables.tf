@@ -1,5 +1,10 @@
-variable "compartment_id" {
-  description = "Compartment OCID where networking resources are created."
+variable "resource_group_name" {
+  description = "Azure resource group for every network resource."
+  type        = string
+}
+
+variable "region" {
+  description = "Azure region for VNet and subnets."
   type        = string
 }
 
@@ -8,24 +13,12 @@ variable "name_prefix" {
   type        = string
 }
 
-variable "vcn_cidr" {
-  description = "VCN CIDR block. Must not overlap any other Kanto VCN."
+variable "vnet_cidr" {
+  description = "Virtual Network CIDR. Must not overlap any other Kanto VNet."
   type        = string
 }
 
-variable "operator_cidrs" {
-  description = "CIDRs that can reach the OKE Kubernetes API endpoint (operator laptops, CI). Empty list closes it down."
-  type        = list(string)
-  default     = []
-}
-
-variable "mew_public_ingress_cidrs" {
-  description = "CIDRs allowed to reach the public Mew Postgres endpoint (Modal egress ranges in prod). Empty list keeps Mew private-only."
-  type        = list(string)
-  default     = []
-}
-
-variable "freeform_tags" {
+variable "tags" {
   description = "Tags applied to every resource."
   type        = map(string)
   default     = {}

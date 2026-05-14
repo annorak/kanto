@@ -1,8 +1,8 @@
-# Kanto — OCI Terraform
+# Kanto — Azure Terraform
 
-Provisions every OCI resource Kanto needs: compartments, VCN, OKE cluster,
-Mew (Postgres + pgvector), OCI Streaming, Object Storage buckets, KMS Vault,
-IAM, Logging.
+Provisions every Azure resource Kanto needs: resource groups, VNet, AKS,
+Mew (Postgres Flexible Server + pgvector), Event Hubs (Kafka surface),
+Blob Storage, Key Vault, IAM (managed identities + RBAC), Log Analytics.
 
 ## Layout
 
@@ -16,64 +16,61 @@ infrastructure/terraform/
 │   └── prod-backend.hcl.example
 ├── bootstrap/                                      ← one-time local-state config
 └── modules/                                        ← reusable building blocks
-    ├── network/         VCN, subnets, gateways, NSGs
-    ├── vault/           KMS vault, master key, secret slots
-    ├── object_storage/  proteins / embeddings / metadata buckets
-    ├── streaming/       stream pool + 7 streams
-    ├── iam/             dynamic groups, IAM users, policies
-    ├── mew/             OCI Database for PostgreSQL + pgvector + optional public NLB
-    ├── oke/             OKE cluster + CPU node pool
-    └── logging/         log group + custom application log
+    ├── network/         VNet, subnets, NSGs, private DNS for Postgres
+    ├── key_vault/       Key Vault + etcd-encryption key + Mew password + placeholder secrets
+    ├── object_storage/  Storage account + proteins/embeddings/metadata containers
+    ├── event_hubs/      Event Hubs namespace + 7 hubs (Kafka surface)
+    ├── iam/             User-assigned managed identities + RBAC + Modal OIDC federation
+    ├── mew/             Postgres Flexible Server (VNet-integrated) + pgvector + kanto database
+    ├── aks/             AKS cluster + system node pool + workload identity + diagnostics
+    └── logging/         Log Analytics workspace
 ```
 
 ## Why one root with two configs (instead of two roots)
 
-The root module — the directory you run `terraform apply` from — defines
-one state file. We get **per-env state isolation** by switching the
-backend at init time:
+The root module defines one state file. We get **per-env state isolation**
+by switching the backend at init time:
 
 ```bash
 terraform init -reconfigure -backend-config=config/dev-backend.hcl
 terraform apply -var-file=config/dev.tfvars
 ```
 
-The `key` differs (`envs/dev/terraform.tfstate` vs
-`envs/prod/terraform.tfstate`), so the two states never share a file. A
-typo'd `terraform apply -var-file=config/prod.tfvars` against a
-dev-initialised backend lands in dev's state — the resource names then
-clash with what's already there and the apply fails loudly. Always
-`terraform init -reconfigure` when switching envs.
+The `key` differs (`envs/dev/terraform.tfstate` vs `envs/prod/...`), so
+the two states never share a blob. Always `terraform init -reconfigure`
+when switching envs.
 
 ## What's tunable, and where
 
-| Lives in        | Examples                                                    |
-| --------------- | ----------------------------------------------------------- |
-| `config/<env>.tfvars`     | OCIDs, CIDRs, sizing (Mew/OKE), retention, the public-NLB toggle, SSH key, operator and Modal CIDRs |
-| `config/<env>-backend.hcl`| Bucket / namespace / state key for remote state              |
-| `variables.tf`            | The full list of tunables, with descriptions and defaults    |
-| `main.tf`                 | The wiring; module calls feed every variable into the right module |
+| Lives in                    | Examples                                                                |
+| --------------------------- | ----------------------------------------------------------------------- |
+| `config/<env>.tfvars`       | Subscription/tenant IDs, CIDRs, AKS+Mew sizing, retention, Modal OIDC   |
+| `config/<env>-backend.hcl`  | Storage account / container / state key for remote state                |
+| `variables.tf`              | Full list of tunables, descriptions, defaults                           |
+| `main.tf`                   | Wiring; module calls feed every variable into the right module          |
 
 If you want to tune something we don't currently expose, **add a variable
 to `variables.tf`** and pass it through the relevant `module "..."` call
-in `main.tf`. The module itself probably already has a matching input.
+in `main.tf`. The module itself likely already has a matching input.
 
-## Bootstrap (run once)
+## Bootstrap (run once per subscription)
 
-`bootstrap/` creates the compartment hierarchy and the Object Storage
-bucket that holds remote state for the main config below. It uses local
-state — there's no chicken-and-egg way to create the state bucket
-remotely.
+`bootstrap/` creates per-env resource groups + the Storage Account that
+holds remote state for the main config below. Local state — there's no
+chicken-and-egg way to create the state container remotely.
 
 ```bash
 cd infrastructure/terraform/bootstrap
+az login                                    # if not already
 cp terraform.tfvars.example terraform.tfvars
-# Fill in tenancy_ocid (from ~/.oci/config: the `tenancy=` line).
+# Fill in subscription_id + tenant_id (`az account show`).
 terraform init
 terraform apply
 ```
 
-Save the outputs — you need `compartment_dev_id`, `compartment_prod_id`,
-`tfstate_bucket_name`, and `tfstate_namespace` for the next step.
+Note the outputs — `resource_group_dev_name`, `resource_group_prod_name`,
+`tfstate_storage_account_name`, `tfstate_container_name`. Paste them into
+the main config files in the next step.
 
 ## Apply an environment
 
@@ -83,74 +80,55 @@ cd infrastructure/terraform
 # 1. Per-env config files (gitignored).
 cp config/dev.tfvars.example      config/dev.tfvars
 cp config/dev-backend.hcl.example config/dev-backend.hcl
-# Edit both: paste OCIDs, namespace, SSH key, etc.
+# Edit both: paste bootstrap outputs, SSH key, operator CIDRs.
 
-# 2. Customer Secret Key for the S3-compat backend. NOT your OCI API key.
-#    Identity → Users → <your user> → Customer Secret Keys → Generate.
-#
-#    AWS_ACCESS_KEY_ID    = the OCI "Access key" (alphanumeric, no slashes).
-#    AWS_SECRET_ACCESS_KEY = the OCI "Secret key" (base64-ish, may contain /).
-#    Swapping them yields an "IncompleteSignature" error because the `/` in
-#    a swapped key breaks AWS SigV4 credential parsing.
-export AWS_ACCESS_KEY_ID=...
-export AWS_SECRET_ACCESS_KEY=...
-
-# Disable the AWS SDK v2 default of "always checksum with aws-chunked"; OCI's
-# S3-compat returns 501 NotImplemented on aws-chunked uploads.
-export AWS_REQUEST_CHECKSUM_CALCULATION=when_required
-export AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
-
-# 3. Init the backend and apply.
+# 2. Init the backend and apply.
 terraform init -reconfigure -backend-config=config/dev-backend.hcl
 terraform plan  -var-file=config/dev.tfvars -out tfplan
 terraform apply tfplan
 ```
 
-Switch to prod by re-running step 3 with the prod files:
-
-```bash
-terraform init -reconfigure -backend-config=config/prod-backend.hcl
-terraform plan  -var-file=config/prod.tfvars -out tfplan
-terraform apply tfplan
-```
-
-`-reconfigure` forces Terraform to forget the previous backend wiring; if
-you skip it after switching, Terraform will refuse to proceed.
+Switch to prod by re-running step 2 with the prod files; `-reconfigure`
+forces Terraform to forget the previous backend wiring.
 
 ## After apply
 
-1. **Rotate Vault placeholders.** For each placeholder secret the vault
-   module created (`modal-token`, `slack-webhook-url`,
-   `pagerduty-integration-key`):
+1. **Rotate Key Vault placeholders.** For each placeholder secret the
+   key_vault module created (`<prefix>-modal-token`,
+   `<prefix>-slack-webhook-url`, `<prefix>-pagerduty-integration-key`):
    ```bash
-   oci vault secret update-base64 \
-     --secret-id <ocid> \
-     --secret-content-content "$(printf '<real value>' | base64)"
+   az keyvault secret set \
+     --vault-name <vault-name> \
+     --name <secret-name> \
+     --value "<real value>"
    ```
-2. **Issue a Modal API key for the Modal IAM user** (see `modal_user_id`
-   output). Upload the public half to OCI; ship the private half +
-   fingerprint into the `oci-credentials` Modal Secret:
+2. **Wire Modal workload-identity federation.** In prod only:
    ```bash
-   oci iam user api-key upload \
-     --user-id <modal_user_id> \
-     --key-file path/to/modal-public.pem
+   az identity federated-credential create \
+     --identity-name <prefix>-modal \
+     --resource-group <prefix>-rg \
+     --name modal-federation \
+     --issuer <Modal OIDC issuer URL> \
+     --subject <Modal OIDC subject claim> \
+     --audiences "api://AzureADTokenExchange"
    ```
+   (The iam module creates this resource when `modal_oidc_issuer` is
+   non-empty; the CLI command above is the manual fallback.)
 3. **Pull a kubeconfig:**
    ```bash
-   oci ce cluster create-kubeconfig \
-     --cluster-id <oke_cluster_id> \
-     --file $HOME/.kube/config-kanto-dev \
-     --region us-sanjose-1 \
-     --token-version 2.0.0
+   az aks get-credentials \
+     --resource-group $(terraform output -raw resource_group_name) \
+     --name $(terraform output -raw aks_cluster_name) \
+     --file $HOME/.kube/kanto-dev
    ```
 
 ## Adding a new resource
 
-- **A new bucket / stream / log group:** add it to the relevant module
-  (`modules/object_storage/`, `modules/streaming/`, etc.). Modules use
-  `for_each` over a local map so adding usually means appending one line.
+- **A new container / event hub / log table:** add it to the relevant
+  module. Modules use `for_each` over a local map; usually appending one
+  line is enough.
 - **A new tunable:** add a `variable` to `variables.tf`, pass it through
-  the matching `module "..."` block in `main.tf`, and document it in
+  the matching `module "..."` block in `main.tf`, document it in
   `config/<env>.tfvars.example`.
 - **A new module entirely:** drop a folder under `modules/` with
   `versions.tf`, `variables.tf`, `main.tf`, `outputs.tf`, `README.md`,
@@ -162,45 +140,42 @@ and `tfsec` — these run automatically in CI on every PR.
 ## Tearing down
 
 Reverse the provisioning order. Most modules have `prevent_destroy` on
-load-bearing resources (vault, KMS key, OKE cluster, Mew DB system, state
-bucket, compartments) — explicitly remove that lifecycle block before a
-real `terraform destroy`, and only do that in dev.
+load-bearing resources (Key Vault, etcd key, state storage account,
+resource groups). Remove the lifecycle block before a real `destroy`,
+and only do that in dev.
 
 ```bash
-# Main env destroy:
 terraform init -reconfigure -backend-config=config/dev-backend.hcl
 terraform destroy -var-file=config/dev.tfvars
 
-# Bootstrap destroy (only after every env is destroyed):
 cd bootstrap
 terraform destroy
 ```
 
 In prod, do not destroy. If you need to retire prod, take a final backup
-of Mew + the `kanto-embeddings-prod` bucket first; the `prevent_destroy`
-blocks make this delay unavoidable.
+of Mew + the kanto-embeddings container first; `prevent_destroy` makes
+this delay unavoidable.
 
 ## Cost expectations
 
-Rough monthly spend per environment, excluding Modal (Task 7) and any
-backfill burst. Numbers from public OCI list pricing in May 2026; verify
-before relying on them.
+Rough monthly spend per environment, in eastus, May 2026 list prices.
+12-month Azure free tier credits apply for the first year on some lines.
 
-| Component                              | Dev       | Prod        |
-| -------------------------------------- | --------- | ----------- |
-| OKE cluster (Enhanced)                 | $73       | $73         |
-| OKE worker nodes (E5.Flex, on-demand)  | ~$70      | ~$310       |
-| Mew (PostgreSQL DB system)             | ~$100     | ~$1,150     |
-| Mew storage (block, regionally durable)| ~$5       | ~$22        |
-| OCI Streaming pool + streams           | ~$10      | ~$30        |
-| Object Storage (buckets, std + archive)| ~$5       | ~$50–250    |
-| Network LB (Mew public, prod only)     | $0        | ~$15        |
-| NAT gateway egress                     | ~$5       | ~$30        |
-| KMS Vault + key                        | ~$3       | ~$3         |
-| Logging                                | ~$5       | ~$20        |
-| **Estimated total**                    | **~$280** | **~$1,700+**|
+| Component                                   | Dev (within free tier)     | Prod        |
+| ------------------------------------------- | -------------------------- | ----------- |
+| AKS control plane                           | $0                         | $0          |
+| AKS worker nodes (2× Standard_B2s)          | ~$60                       | n/a         |
+| AKS worker nodes (3× Standard_D4s_v5)       | n/a                        | ~$420       |
+| Mew Flexible Server (B_Standard_B1ms)       | $0 (first 12 mo) / ~$15    | n/a         |
+| Mew Flexible Server (GP_Standard_D16s_v3)   | n/a                        | ~$1,100     |
+| Mew storage (32 GB dev / 256 GB prod)       | $0 (first 12 mo) / ~$4     | ~$32        |
+| Event Hubs Standard (1 TU, auto-inflate 2)  | ~$22                       | ~$44        |
+| Storage Account (LRS, < 5 GB dev)           | $0 (first 12 mo) / ~$1     | ~$50–250    |
+| Key Vault Standard                          | ~$5                        | ~$5         |
+| Log Analytics ingestion (< 5 GB free / mo)  | $0                         | ~$20        |
+| **Estimated total**                         | **~$90/mo (~$0 first 12 mo)** | **~$1,700+** |
 
-Object Storage and egress numbers grow with backfill volume.
+Storage egress + ingestion grow with backfill volume.
 
 ## Testing
 
@@ -211,8 +186,10 @@ cd infrastructure/terraform
 terraform fmt -recursive
 terraform init -backend=false
 terraform validate
+tflint --recursive --minimum-failure-severity=warning
+tfsec --minimum-severity HIGH .
 ```
 
 CI: see `.github/workflows/terraform.yml`. Every PR touching
 `infrastructure/terraform/**` runs `fmt`, `validate` per directory,
-`tflint` (with the OCI ruleset), and `tfsec` (HIGH+).
+`tflint`, and `tfsec` (HIGH+).

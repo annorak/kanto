@@ -1,5 +1,10 @@
-variable "compartment_id" {
-  description = "Compartment OCID for the log group and logs."
+variable "resource_group_name" {
+  description = "Resource group for the Log Analytics workspace."
+  type        = string
+}
+
+variable "region" {
+  description = "Azure region for the workspace."
   type        = string
 }
 
@@ -13,7 +18,7 @@ variable "app_log_retention_days" {
   type        = number
 }
 
-variable "freeform_tags" {
+variable "tags" {
   description = "Tags applied to every resource."
   type        = map(string)
   default     = {}

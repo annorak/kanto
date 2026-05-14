@@ -1,37 +1,43 @@
-variable "compartment_id" {
-  description = "Compartment OCID for the buckets."
+variable "resource_group_name" {
+  description = "Azure resource group for the storage account."
   type        = string
 }
 
 variable "region" {
-  description = "OCI region. Used to name the Object Storage service principal in the lifecycle-enablement IAM policy (objectstorage-<region>)."
+  description = "Azure region for the storage account."
   type        = string
 }
 
 variable "environment" {
-  description = "Environment name appended to bucket names (e.g. 'dev', 'prod')."
+  description = "Environment name (e.g. 'dev', 'prod'). Suffixes container names."
   type        = string
 }
 
-variable "freeform_tags" {
+variable "tags" {
   description = "Tags applied to every resource."
   type        = map(string)
   default     = {}
 }
 
+variable "hot_to_cool_days" {
+  description = "Days before proteins/embeddings blobs transition Hot -> Cool."
+  type        = number
+  default     = 30
+}
+
 variable "hot_to_archive_days" {
-  description = "Days before objects in proteins/embeddings buckets transition to Archive storage. Per design doc Section 17."
+  description = "Days before proteins/embeddings blobs transition to Archive. Per design doc Section 17."
   type        = number
   default     = 90
 }
 
-# Bucket roles. The metadata bucket has different lifecycle expectations
-# (small NCBI cache, we want to keep it warm), so we drive lifecycle from
-# this map rather than coding three nearly-identical resources.
+# Container roles. The metadata container has different lifecycle expectations
+# (small NCBI cache, we want to keep it warm), so we drive lifecycle from this
+# map rather than three near-identical resources.
 locals {
-  buckets = {
-    proteins   = { archive_days = var.hot_to_archive_days }
-    embeddings = { archive_days = var.hot_to_archive_days }
-    metadata   = { archive_days = 0 } # always-hot
+  containers = {
+    proteins   = { archive = true }
+    embeddings = { archive = true }
+    metadata   = { archive = false } # always-hot
   }
 }
