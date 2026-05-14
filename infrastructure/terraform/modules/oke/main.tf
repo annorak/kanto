@@ -63,18 +63,18 @@ resource "oci_containerengine_cluster" "this" {
 
   freeform_tags = var.freeform_tags
 
-  lifecycle {
-    prevent_destroy = true
-  }
+  # No prevent_destroy: when initial cluster creation fails (FAILED state),
+  # Terraform needs to taint+replace, and prevent_destroy blocks that.
+  # Data-bearing protection lives on the Vault, KMS key, and tfstate bucket;
+  # the cluster itself has no persistent local state (workloads come from
+  # Helm in later tasks).
 }
 
-# OKE-managed NetworkPolicies add-on. Required for Kubernetes NetworkPolicy
-# enforcement on top of the OCI-Native CNI.
-resource "oci_containerengine_addon" "network_policies" {
-  cluster_id                       = oci_containerengine_cluster.this.id
-  addon_name                       = "NetworkPolicies"
-  remove_addon_resources_on_delete = true
-}
+# No explicit NetworkPolicies addon: with cni_type = OCI_VCN_IP_NATIVE the
+# OCI VCN-Native CNI enforces Kubernetes NetworkPolicy resources natively.
+# Installing the NetworkPolicies addon (which targets Flannel) on a
+# VCN-Native cluster is rejected by OCI with
+# "Addon management cannot be invoked for NetworkPolicies".
 
 resource "oci_containerengine_node_pool" "cpu" {
   cluster_id         = oci_containerengine_cluster.this.id
@@ -115,13 +115,10 @@ resource "oci_containerengine_node_pool" "cpu" {
       max_pods_per_node = var.max_pods_per_node
     }
 
-    # Tags the cluster-autoscaler (deployed via Helm later) reads to learn
-    # the min/max bounds for this node pool.
-    freeform_tags = merge(var.freeform_tags, {
-      "k8s.io/cluster-autoscaler/enabled"            = "true"
-      "k8s.io/cluster-autoscaler/node-pool-min-size" = tostring(var.node_count_min)
-      "k8s.io/cluster-autoscaler/node-pool-max-size" = tostring(var.node_count_max)
-    })
+    # No autoscaler-bound tags here: OCI freeform tag keys forbid `/`, and the
+    # OCI cluster-autoscaler is configured by node-pool OCID + Helm values
+    # (set when the autoscaler chart deploys in a later task), not by tags.
+    freeform_tags = var.freeform_tags
   }
 
   freeform_tags = var.freeform_tags

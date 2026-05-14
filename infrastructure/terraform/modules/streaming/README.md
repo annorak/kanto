@@ -8,9 +8,9 @@ One OCI Streaming pool per environment plus seven streams:
 | `kanto.embedded`        | 3          | 7 days    | Ditto -> Alakazam                            |
 | `kanto.scored`          | 3          | 7 days    | Alakazam -> Chatot                           |
 | `kanto.modal-failures`  | 1          | 7 days    | Modal failure events Snorlax subscribes to   |
-| `kanto.discovered.dlq`  | 1          | 30 days   | DLQ; longer retention for human review       |
-| `kanto.embedded.dlq`    | 1          | 30 days   | DLQ                                          |
-| `kanto.scored.dlq`      | 1          | 30 days   | DLQ                                          |
+| `kanto.discovered.dlq`  | 1          | 7 days    | DLQ; OCI Streaming caps retention at 7 days  |
+| `kanto.embedded.dlq`    | 1          | 7 days    | DLQ; oncall must triage within the window    |
+| `kanto.scored.dlq`      | 1          | 7 days    | DLQ                                          |
 
 `auto_create_topics_enable=false` so a typo'd topic name fails loudly instead
 of silently creating a junk stream. Streams are encrypted with the env's KMS

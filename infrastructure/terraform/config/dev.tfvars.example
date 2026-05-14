@@ -14,9 +14,10 @@ operator_cidrs = ["203.0.113.10/32"] # your laptop / CI runner /32
 #   ssh-keygen -t ed25519 -f ~/.ssh/kanto-dev-oke -N ""
 ssh_public_key = "ssh-ed25519 AAAA...REPLACE"
 
-# Mew sizing — small in dev.
+# Mew sizing — small in dev. OCI Database for PostgreSQL requires
+# memory_gb in [32, 128] for the flex shape, so 32 is the smallest legal value.
 mew_ocpu_count             = 2
-mew_memory_gb              = 16
+mew_memory_gb              = 32
 mew_instance_count         = 1
 mew_backup_retention_days  = 7
 mew_enable_public_endpoint = false # Modal does not connect to dev
@@ -25,8 +26,6 @@ mew_enable_public_endpoint = false # Modal does not connect to dev
 oke_node_ocpus     = 4
 oke_node_memory_gb = 16
 oke_node_count     = 2
-oke_node_count_min = 2
-oke_node_count_max = 4
 
 # Logging / lifecycle defaults are fine for dev.
 # app_log_retention_days = 30

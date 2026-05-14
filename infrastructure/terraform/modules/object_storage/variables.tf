@@ -3,13 +3,13 @@ variable "compartment_id" {
   type        = string
 }
 
-variable "environment" {
-  description = "Environment name appended to bucket names (e.g. 'dev', 'prod')."
+variable "region" {
+  description = "OCI region. Used to name the Object Storage service principal in the lifecycle-enablement IAM policy (objectstorage-<region>)."
   type        = string
 }
 
-variable "kms_key_id" {
-  description = "KMS key OCID used for bucket encryption."
+variable "environment" {
+  description = "Environment name appended to bucket names (e.g. 'dev', 'prod')."
   type        = string
 }
 

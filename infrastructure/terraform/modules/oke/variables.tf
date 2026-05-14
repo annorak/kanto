@@ -70,17 +70,7 @@ variable "node_memory_gb" {
 }
 
 variable "node_count" {
-  description = "Initial worker node count. Cluster autoscaler (Helm-installed in a later task) handles dynamic scaling between min/max via the freeform tags below."
-  type        = number
-}
-
-variable "node_count_min" {
-  description = "Min size hint for the cluster autoscaler."
-  type        = number
-}
-
-variable "node_count_max" {
-  description = "Max size hint for the cluster autoscaler."
+  description = "Initial worker node count. Cluster autoscaler (Helm-installed in a later task) handles dynamic scaling; min/max are passed to that chart directly, not stored here."
   type        = number
 }
 

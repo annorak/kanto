@@ -21,16 +21,16 @@ variable "freeform_tags" {
 
 # Streams the design doc names. Partition counts: 3 for main streams (small
 # parallelism for v1, can grow), 1 per DLQ (volume should be near zero).
-# Retention: 7 days for main, 30 days for DLQ (DLQs may sit waiting on
-# human review, per Section 10 of the design doc).
+# OCI Streaming caps retention at 168 hours (7 days) on the standard tier;
+# DLQs share that ceiling, so oncall must triage DLQ messages within a week.
 locals {
   streams = {
     "kanto.discovered"     = { partitions = 3, retention_hours = 168 }
     "kanto.embedded"       = { partitions = 3, retention_hours = 168 }
     "kanto.scored"         = { partitions = 3, retention_hours = 168 }
     "kanto.modal-failures" = { partitions = 1, retention_hours = 168 }
-    "kanto.discovered.dlq" = { partitions = 1, retention_hours = 720 }
-    "kanto.embedded.dlq"   = { partitions = 1, retention_hours = 720 }
-    "kanto.scored.dlq"     = { partitions = 1, retention_hours = 720 }
+    "kanto.discovered.dlq" = { partitions = 1, retention_hours = 168 }
+    "kanto.embedded.dlq"   = { partitions = 1, retention_hours = 168 }
+    "kanto.scored.dlq"     = { partitions = 1, retention_hours = 168 }
   }
 }

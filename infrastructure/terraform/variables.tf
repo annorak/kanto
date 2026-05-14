@@ -118,16 +118,6 @@ variable "oke_node_count" {
   type        = number
 }
 
-variable "oke_node_count_min" {
-  description = "Cluster autoscaler min size hint."
-  type        = number
-}
-
-variable "oke_node_count_max" {
-  description = "Cluster autoscaler max size hint."
-  type        = number
-}
-
 # -----------------------------------------------------------------------------
 # Logging / Object Storage lifecycle
 # -----------------------------------------------------------------------------

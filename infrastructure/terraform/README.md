@@ -87,8 +87,18 @@ cp config/dev-backend.hcl.example config/dev-backend.hcl
 
 # 2. Customer Secret Key for the S3-compat backend. NOT your OCI API key.
 #    Identity → Users → <your user> → Customer Secret Keys → Generate.
+#
+#    AWS_ACCESS_KEY_ID    = the OCI "Access key" (alphanumeric, no slashes).
+#    AWS_SECRET_ACCESS_KEY = the OCI "Secret key" (base64-ish, may contain /).
+#    Swapping them yields an "IncompleteSignature" error because the `/` in
+#    a swapped key breaks AWS SigV4 credential parsing.
 export AWS_ACCESS_KEY_ID=...
 export AWS_SECRET_ACCESS_KEY=...
+
+# Disable the AWS SDK v2 default of "always checksum with aws-chunked"; OCI's
+# S3-compat returns 501 NotImplemented on aws-chunked uploads.
+export AWS_REQUEST_CHECKSUM_CALCULATION=when_required
+export AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
 
 # 3. Init the backend and apply.
 terraform init -reconfigure -backend-config=config/dev-backend.hcl

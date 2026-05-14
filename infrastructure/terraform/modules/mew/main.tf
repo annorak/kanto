@@ -1,32 +1,13 @@
-# Custom DB configuration that whitelists pgvector for installation.
-# Per OCI docs (admin-enabled-extensions): the value of oci.allowed_extensions
-# is the list of extensions the operator may CREATE EXTENSION for once the
-# DB is up. The actual `CREATE EXTENSION vector;` runs in Task 3 migrations.
-resource "oci_psql_configuration" "this" {
-  compartment_id              = var.compartment_id
-  display_name                = "${var.name_prefix}-mew-config"
-  db_version                  = var.db_version
-  shape                       = var.shape
-  instance_ocpu_count         = var.ocpu_count
-  instance_memory_size_in_gbs = var.memory_gb
-
-  db_configuration_overrides {
-    items {
-      config_key             = "oci.allowed_extensions"
-      overriden_config_value = "pgvector"
-    }
-  }
-
-  freeform_tags = var.freeform_tags
-}
-
+# pgvector is preinstalled in OCI Database for PostgreSQL 16 and enabled
+# per-database with `CREATE EXTENSION vector;` — that statement is part of
+# the Task 3 migrations. No custom oci_psql_configuration is needed; the
+# DB system uses the default configuration for the shape and version.
 resource "oci_psql_db_system" "this" {
   compartment_id = var.compartment_id
   display_name   = "${var.name_prefix}-mew"
   db_version     = var.db_version
   shape          = var.shape
   instance_count = var.instance_count
-  config_id      = oci_psql_configuration.this.id
 
   instance_ocpu_count         = var.ocpu_count
   instance_memory_size_in_gbs = var.memory_gb
@@ -65,8 +46,10 @@ resource "oci_psql_db_system" "this" {
 
   freeform_tags = var.freeform_tags
 
+  # No prevent_destroy: when initial DB creation fails partway, Terraform
+  # needs to taint+replace, and prevent_destroy blocks that. Data is
+  # protected via the automated daily backups + PITR configured above.
   lifecycle {
-    prevent_destroy = true
     # OCI auto-applies minor version upgrades during the maintenance window;
     # a plan diff on db_version after such an upgrade should not force-replace.
     ignore_changes = [db_version]

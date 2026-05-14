@@ -3,7 +3,11 @@ output "vault_id" {
 }
 
 output "master_key_id" {
-  value = oci_kms_key.master.id
+  description = "Master KMS key OCID. Consumers wait until the service-principal grant has propagated before they get this value."
+  value       = oci_kms_key.master.id
+  # depends_on forces downstream modules (oke, streaming) to wait for the
+  # IAM policy + propagation sleep before they reference the key.
+  depends_on = [time_sleep.kms_policy_propagation]
 }
 
 output "mew_password" {

@@ -43,8 +43,8 @@ module "object_storage" {
   source = "./modules/object_storage"
 
   compartment_id      = var.compartment_id
+  region              = var.region
   environment         = var.environment
-  kms_key_id          = module.vault.master_key_id
   hot_to_archive_days = var.hot_to_archive_days
   freeform_tags       = local.freeform_tags
 }
@@ -104,10 +104,15 @@ module "oke" {
   node_ocpus         = var.oke_node_ocpus
   node_memory_gb     = var.oke_node_memory_gb
   node_count         = var.oke_node_count
-  node_count_min     = var.oke_node_count_min
-  node_count_max     = var.oke_node_count_max
   ssh_public_key     = var.ssh_public_key
   freeform_tags      = local.freeform_tags
+
+  # The `kms_key_id` reference above only ties OKE to the key resource, not to
+  # the kms_service_access policy or its time_sleep — so without this explicit
+  # depends_on the cluster can race the policy's tenancy-wide propagation and
+  # fail CreateCluster pre-validation with no diagnostic surface (lifecycle-
+  # details null, work-request errors purged).
+  depends_on = [module.vault]
 }
 
 module "logging" {

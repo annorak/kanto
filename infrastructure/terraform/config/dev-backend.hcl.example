@@ -1,25 +1,53 @@
 ###############################################################################
 # Dev backend — copy to config/dev-backend.hcl (gitignored) and fill in.
 #
-# State is held in OCI Object Storage via its S3-compat endpoint. After the
-# bootstrap step, `tfstate_bucket_name` and `tfstate_namespace` come from
-# bootstrap's outputs; paste them in.
+# Terraform has no OCI-native state backend, so we use the generic `s3`
+# backend pointed at OCI Object Storage's S3-compatibility API. This is the
+# pattern Oracle themselves recommend; see
+# https://docs.oracle.com/en-us/iaas/Content/Object/Tasks/s3compatibleapi.htm
+#
+# After bootstrap/, paste `tfstate_bucket_name` and `tfstate_namespace` from
+# its outputs into the values below.
 #
 # Apply with:
 #   terraform init -reconfigure -backend-config=config/dev-backend.hcl
 #   terraform apply -var-file=config/dev.tfvars
 ###############################################################################
 
-bucket   = "kanto-tfstate-shared"
-key      = "envs/dev/terraform.tfstate"
-region   = "us-sanjose-1"
-endpoint = "https://<TENANCY_NAMESPACE>.compat.objectstorage.us-sanjose-1.oraclecloud.com"
+bucket = "kanto-tfstate-shared"
+key    = "envs/dev/terraform.tfstate"
+region = "us-sanjose-1"
 
+endpoints = {
+  s3 = "https://<TENANCY_NAMESPACE>.compat.objectstorage.us-sanjose-1.oraclecloud.com"
+}
+
+# Skip every AWS-specific verification. We're talking to OCI, not AWS, so
+# STS / IAM / EC2-metadata calls would all fail. The state file itself is
+# uploaded straight to the S3-compat endpoint above.
 skip_region_validation      = true
 skip_credentials_validation = true
+skip_requesting_account_id  = true
 skip_metadata_api_check     = true
-force_path_style            = true
+skip_s3_checksum            = true
+use_path_style              = true
 
-# Provide AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in your shell. These
-# are a Customer Secret Key on your OCI user (Identity → Users → Customer
-# Secret Keys), NOT the OCI API key.
+# AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be in your shell — they
+# are a *Customer Secret Key* on your OCI user (Identity → Users → Your
+# user → Customer secret keys), NOT the OCI API key.
+#
+# Watch out: OCI's Access Key is plain alphanumeric; the Secret Key is
+# base64-shaped and may contain `/`, `+`, `=`. Mixing them up produces an
+# AWS SigV4 "IncompleteSignature" error because the `/` in a swapped key
+# breaks the credential parser.
+#
+# In addition, set these two env vars before `terraform apply`:
+#
+#   export AWS_REQUEST_CHECKSUM_CALCULATION=when_required
+#   export AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+#
+# Newer AWS SDK v2 (which Terraform's s3 backend uses) defaults to "always"
+# for these and uploads with `aws-chunked` content-encoding. OCI's S3-compat
+# does not implement aws-chunked and returns 501 NotImplemented on PutObject,
+# which manifests as "failed to upload state". The env vars switch the SDK
+# to only checksum when the operation requires it.

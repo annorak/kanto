@@ -2,14 +2,17 @@
 
 OCI Database for PostgreSQL ("Mew") with pgvector enabled.
 
-The module creates two things:
+The module creates a single `oci_psql_db_system` with daily backups
+(PITR is automatic), TLS required (OCI default), and a private endpoint
+inside the env's private subnet. **No `prevent_destroy`** on the DB system
+— initial create can fail (shape unavailability, quota issues), and
+`prevent_destroy` would block recovery. Data is protected via the
+automated backups + PITR.
 
-1. A `oci_psql_configuration` that whitelists `pgvector` via the
-   `oci.allowed_extensions` configuration override. The actual
-   `CREATE EXTENSION vector;` runs in Task 3 migrations.
-2. A `oci_psql_db_system` with daily backups (PITR is automatic), TLS
-   required (OCI default), bring-your-own-key storage encryption, and a
-   private endpoint inside the env's private subnet.
+pgvector is preinstalled in OCI Database for PostgreSQL 16, so no custom
+`oci_psql_configuration` is needed; the DB system uses the default
+configuration for the shape and version. The Task 3 migrations run
+`CREATE EXTENSION vector;` against the application database to enable it.
 
 Optionally, when `enable_public_endpoint = true` (prod only), a public OCI
 Network Load Balancer is created in the public subnet, forwarding TCP/5432

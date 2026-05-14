@@ -29,7 +29,5 @@ mew_enable_public_endpoint = true
 oke_node_ocpus     = 8
 oke_node_memory_gb = 32
 oke_node_count     = 3
-oke_node_count_min = 3
-oke_node_count_max = 6
 
 app_log_retention_days = 90

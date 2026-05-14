@@ -55,9 +55,9 @@ resource "oci_identity_policy" "oke_workers" {
     # Streaming: produce/consume on every stream in the pool.
     "Allow dynamic-group ${oci_identity_dynamic_group.oke_workers.name} to use stream-push in compartment id ${var.compartment_id}",
     "Allow dynamic-group ${oci_identity_dynamic_group.oke_workers.name} to use stream-pull in compartment id ${var.compartment_id}",
-    # Mew: connect via the private endpoint. OCI Database for PostgreSQL
-    # uses standard Postgres auth on top, so this just grants network reach.
-    "Allow dynamic-group ${oci_identity_dynamic_group.oke_workers.name} to use postgres-connect in compartment id ${var.compartment_id}",
+    # Mew (OCI Database for PostgreSQL) has no IAM-side "connect" verb:
+    # reachability is gated by the Mew NSG (network module) and DB auth by
+    # Postgres credentials fetched from Vault. No IAM statement needed here.
     # Logging: emit logs to the env's log groups.
     "Allow dynamic-group ${oci_identity_dynamic_group.oke_workers.name} to use log-content in compartment id ${var.compartment_id}",
   ]
@@ -77,6 +77,7 @@ resource "oci_identity_policy" "modal" {
     "Allow group ${oci_identity_group.modal.name} to read buckets in compartment id ${var.compartment_id} where target.bucket.name='${var.bucket_embeddings}'",
     "Allow group ${oci_identity_group.modal.name} to manage objects in compartment id ${var.compartment_id} where target.bucket.name='${var.bucket_embeddings}'",
     "Allow group ${oci_identity_group.modal.name} to use stream-push in compartment id ${var.compartment_id} where target.stream.name='kanto.embedded'",
-    "Allow group ${oci_identity_group.modal.name} to use postgres-connect in compartment id ${var.compartment_id}",
+    # No IAM grant for Mew connection — Modal hits the public NLB (allow-listed
+    # in the Mew NSG) and authenticates with Postgres credentials Modal-side.
   ]
 }

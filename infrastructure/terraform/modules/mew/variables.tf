@@ -53,8 +53,13 @@ variable "ocpu_count" {
 }
 
 variable "memory_gb" {
-  description = "Memory per instance, in GB."
+  description = "Memory per instance, in GB. OCI Database for PostgreSQL enforces a 32 GB floor and a 128 GB ceiling on the VM.Standard.E4.Flex shape."
   type        = number
+
+  validation {
+    condition     = var.memory_gb >= 32 && var.memory_gb <= 128
+    error_message = "memory_gb must be between 32 and 128 (OCI Database for PostgreSQL shape limit)."
+  }
 }
 
 variable "system_type" {
