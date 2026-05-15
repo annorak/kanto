@@ -47,8 +47,8 @@ hard-coding one would defeat the single-source-of-truth principle.
 | `KANTO_MEW_SSLMODE`       | `disable` (local only) / `verify-full` (anywhere else)    |
 | `KANTO_MEW_DSN_OVERRIDE`  | Tests only — bypasses `MewSettings`                       |
 
-In dev and prod, `KANTO_MEW_PASSWORD` is fetched from OCI Vault by the
-operator's shell wrapper (see Section *Apply to dev/prod* below) and
+In dev and prod, `KANTO_MEW_PASSWORD` is fetched from Azure Key Vault by
+the operator's shell wrapper (see Section *Apply to dev/prod* below) and
 exported into the local environment for the duration of the migration
 command.
 
@@ -86,21 +86,62 @@ The script refuses to run unless `KANTO_ENV=local` — see "Pitfalls" below.
 
 ## Apply: dev
 
-Dev Mew is the OCI-managed Postgres provisioned by Task 2.
+Dev Mew is the Azure Postgres Flexible Server provisioned by Task 2,
+VNet-integrated in `eastus2` (no public endpoint). There are two
+supported paths; pick by what you have ready.
 
-1. **Network.** Connect to the OCI bastion (or VPN). Confirm
-   reachability: `nc -vz <mew-host> 5432`.
-2. **Pull credentials.** Fetch the dev DDL role's password from OCI
-   Vault into your shell. Do **not** write it to a file:
+### Path A — In-cluster Kubernetes Job (recommended)
+
+Migrations run from inside AKS, which sits in the same eastus2 VNet
+and resolves Mew's private FQDN.
+
+1. **Build / push the migrations image.** A `Dockerfile` lives in
+   `infrastructure/migrations/`. CI publishes
+   `ghcr.io/<owner>/kanto-migrations:<sha>` on every merge. For an
+   ad-hoc apply from a working tree, `docker build && docker push`
+   to your registry of choice.
+2. **Render the Job manifest** with the image tag, the Mew FQDN,
+   the KV secret reference (workload-identity-mounted), and
+   `KANTO_ENV=dev`.
+3. **Apply** the Job:
    ```bash
-   export KANTO_MEW_PASSWORD="$(oci vault secret read --secret-id <ocid> --query 'data.\"secret-bundle-content\".content' --raw-output | base64 -d)"
+   KUBECONFIG=~/.kube/kanto-dev kubectl apply -f mew-migrate-job.yaml
+   KUBECONFIG=~/.kube/kanto-dev kubectl wait --for=condition=complete \
+     job/mew-migrate --timeout=10m
+   KUBECONFIG=~/.kube/kanto-dev kubectl logs job/mew-migrate
+   ```
+4. **Verify.** Either re-run the Job with `alembic current` as its
+   command, or query `kanto_alembic_version` directly via a psql
+   probe pod.
+
+### Path B — Temporary public access (operator-only, emergencies)
+
+1. **Pull credentials.** Fetch the dev DDL role's password from
+   Azure Key Vault into your shell:
+   ```bash
+   export KANTO_MEW_PASSWORD="$(az keyvault secret show \
+     --vault-name kanto-dev-kv-<suffix> \
+     --name kanto-dev-mew-password \
+     --query value -o tsv)"
+   ```
+2. **Temporarily allow public access.** Toggle the server to
+   public-access mode and add an operator firewall rule. Both must be
+   reverted afterwards.
+   ```bash
+   az postgres flexible-server update -g kanto-dev-rg \
+     -n kanto-dev-mew-store --public-access Enabled
+   az postgres flexible-server firewall-rule create -g kanto-dev-rg \
+     -n kanto-dev-mew-store \
+     --rule-name operator-$USER \
+     --start-ip-address $(curl -s https://api.ipify.org) \
+     --end-ip-address   $(curl -s https://api.ipify.org)
    ```
 3. **Set the rest of the env:**
    ```bash
    export KANTO_ENV=dev
-   export KANTO_MEW_HOST=<dev-mew-host>
-   export KANTO_MEW_DATABASE=mew
-   export KANTO_MEW_USER=kanto_ddl
+   export KANTO_MEW_HOST=kanto-dev-mew-store.postgres.database.azure.com
+   export KANTO_MEW_DATABASE=kanto
+   export KANTO_MEW_USER=kanto_admin
    export KANTO_MEW_SSLMODE=verify-full
    ```
 4. **Dry-run first.** Generate SQL without applying:
@@ -112,10 +153,14 @@ Dev Mew is the OCI-managed Postgres provisioned by Task 2.
 5. **Apply.**
    ```bash
    uv run alembic upgrade head
-   ```
-6. **Verify.**
-   ```bash
    uv run alembic current
+   ```
+6. **Revert public access.**
+   ```bash
+   az postgres flexible-server firewall-rule delete -g kanto-dev-rg \
+     -n kanto-dev-mew-store --rule-name operator-$USER --yes
+   az postgres flexible-server update -g kanto-dev-rg \
+     -n kanto-dev-mew-store --public-access Disabled
    ```
 
 If the migration fails midway, see "Recovery" below.
@@ -135,12 +180,14 @@ implications before the apply runs.
    anything.
 3. **Approver sign-off.** Approver writes `:lgtm:` (or equivalent) on
    the deploy ticket. No verbal approval; we want an audit trail.
-4. **Backup.** Snapshot the prod Mew instance via OCI's automated
-   backup, take note of the backup ID, and confirm restore-ability
-   on a non-prod instance once per quarter (this is a separate runbook).
-5. **Apply during a quiet window.** OCI Streaming consumers tolerate
-   short Mew unavailability via DLQ; still, prefer applying outside
-   business hours.
+4. **Backup.** Snapshot the prod Mew instance via Azure Postgres
+   Flexible Server's automated backups (the module sets
+   `backup_retention_days`; PITR is always on). Note the timestamp
+   you would restore to if needed. Confirm restore-ability on a
+   non-prod instance once per quarter (separate runbook).
+5. **Apply during a quiet window.** Azure Event Hubs consumers
+   tolerate short Mew unavailability via DLQs; still, prefer applying
+   outside business hours.
 6. **Apply** with the same env-var setup as dev, swapping the prod
    secret. Run `alembic upgrade head` — *not* `--sql` (that ran in
    step 2 and was already reviewed).
