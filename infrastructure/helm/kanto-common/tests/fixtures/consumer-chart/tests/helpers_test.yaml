@@ -1,0 +1,233 @@
+suite: kanto-common library helpers
+templates:
+  - templates/serviceaccount.yaml
+  - templates/service.yaml
+  - templates/networkpolicy.yaml
+  - templates/secretproviderclass.yaml
+  - templates/deployment.yaml
+
+release:
+  name: snorlax
+  namespace: kanto-snorlax
+
+tests:
+  - it: renders a ServiceAccount with workload-identity annotations
+    template: templates/serviceaccount.yaml
+    asserts:
+      - isKind:
+          of: ServiceAccount
+      - equal:
+          path: metadata.name
+          value: snorlax-consumer-chart
+      - equal:
+          path: metadata.annotations["azure.workload.identity/client-id"]
+          value: 00000000-0000-0000-0000-000000000001
+      - equal:
+          path: metadata.annotations["azure.workload.identity/tenant-id"]
+          value: 00000000-0000-0000-0000-000000000002
+
+  - it: ServiceAccount carries the standard labels
+    template: templates/serviceaccount.yaml
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/part-of"]
+          value: kanto
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: consumer-chart
+      - equal:
+          path: metadata.labels["kanto.io/service"]
+          value: consumer-chart
+
+  - it: Service exposes http + metrics ports
+    template: templates/service.yaml
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: spec.ports[0].name
+          value: http
+      - equal:
+          path: spec.ports[0].port
+          value: 8080
+      - equal:
+          path: spec.ports[1].name
+          value: metrics
+      - equal:
+          path: spec.ports[1].port
+          value: 9464
+
+  - it: NetworkPolicy denies by default and permits declared peers
+    template: templates/networkpolicy.yaml
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+      - contains:
+          path: spec.policyTypes
+          content: Ingress
+      - contains:
+          path: spec.policyTypes
+          content: Egress
+      - equal:
+          path: spec.ingress[1].from[0].podSelector.matchLabels["app.kubernetes.io/name"]
+          value: kanto-api
+
+  - it: SecretProviderClass uses Workload Identity (no podIdentity, no VM MI)
+    template: templates/secretproviderclass.yaml
+    asserts:
+      - isKind:
+          of: SecretProviderClass
+      - equal:
+          path: spec.provider
+          value: azure
+      - equal:
+          path: spec.parameters.usePodIdentity
+          value: "false"
+      - equal:
+          path: spec.parameters.useVMManagedIdentity
+          value: "false"
+      - equal:
+          path: spec.parameters.clientID
+          value: 00000000-0000-0000-0000-000000000001
+      - equal:
+          path: spec.parameters.keyvaultName
+          value: kanto-dev-kv-ab12cd
+
+  - it: SecretProviderClass syncs env-var secrets to a K8s Secret
+    template: templates/secretproviderclass.yaml
+    asserts:
+      - equal:
+          path: spec.secretObjects[0].secretName
+          value: snorlax-consumer-chart-akv
+      - equal:
+          path: spec.secretObjects[0].type
+          value: Opaque
+      - contains:
+          path: spec.secretObjects[0].data
+          content:
+            objectName: mew-password
+            key: KANTO_MEW_PASSWORD
+      - contains:
+          path: spec.secretObjects[0].data
+          content:
+            objectName: modal-token
+            key: KANTO_MODAL_TOKEN
+
+  - it: Deployment sets the workload-identity pod label
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels["azure.workload.identity/use"]
+          value: "true"
+
+  - it: Deployment hardens the pod and container security context
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          content: ALL
+
+  - it: Deployment image is registry/repo:sha
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: kantodevacr.azurecr.io/kanto-snorlax:deadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+
+  - it: rejects image.tag=latest
+    template: templates/deployment.yaml
+    set:
+      image.tag: latest
+    asserts:
+      - failedTemplate:
+          errorMessage: "image.tag=latest is not allowed. Use the Git SHA from CI."
+
+  - it: liveness and readiness probes use kanto-commons health endpoints
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.port
+          value: 8081
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /readyz
+
+  - it: applies the "small" resource preset by default
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 100m
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 256Mi
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 512Mi
+      - notExists:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+
+  - it: applies the "medium" preset when requested
+    template: templates/deployment.yaml
+    set:
+      resources.preset: medium
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 250m
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 512Mi
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 1Gi
+
+  - it: rejects unknown resource preset
+    template: templates/deployment.yaml
+    set:
+      resources.preset: huge
+    asserts:
+      - failedTemplate:
+          errorMessage: 'Unknown resources.preset "huge". Use one of: small, medium, large, xlarge.'
+
+  - it: Deployment mounts the CSI secrets volume and injects synced env vars
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[0].name
+          value: kanto-secrets
+      - equal:
+          path: spec.template.spec.volumes[0].csi.driver
+          value: secrets-store.csi.k8s.io
+      - equal:
+          path: spec.template.spec.volumes[0].csi.volumeAttributes.secretProviderClass
+          value: snorlax-consumer-chart-akv
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].mountPath
+          value: /var/run/secrets/kanto
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KANTO_MEW_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: snorlax-consumer-chart-akv
+                key: KANTO_MEW_PASSWORD

@@ -1,0 +1,81 @@
+image:
+  registry: kantodevacr.azurecr.io
+  repository: kanto-snorlax
+  tag: deadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+workloadIdentity:
+  enabled: true
+  clientId: 00000000-0000-0000-0000-000000000001
+  tenantId: 00000000-0000-0000-0000-000000000002
+
+keyVault:
+  name: kanto-dev-kv-ab12cd
+  tenantId: 00000000-0000-0000-0000-000000000002
+  secrets:
+    - objectName: kanto-dev-mew-password
+      alias: mew-password
+      envVar: KANTO_MEW_PASSWORD
+    - objectName: kanto-dev-modal-token
+      alias: modal-token
+      envVar: KANTO_MODAL_TOKEN
+    - objectName: kanto-dev-tls-cert
+      alias: tls.crt
+      file: true
+
+otel:
+  endpoint: http://otel-collector.observability.svc.cluster.local:4318
+  sampleRate: 0.5
+  protocol: http/protobuf
+
+prometheus:
+  scrape: true
+  port: 9464
+  path: /metrics
+
+resources:
+  preset: small
+  overrides: {}
+
+probes:
+  port: 8081
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+networkPolicy:
+  enabled: true
+  allowFromPods:
+    - namespace: kanto-api
+      podLabels:
+        app.kubernetes.io/name: kanto-api
+  allowToPods: []
+  allowToCidrs: []
+
+service:
+  type: ClusterIP
+  port: 8080
+  metricsPort: 9464
+
+pod:
+  annotations: {}
+  labels: {}
+  topologySpreadConstraints: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+kanto:
+  environment: dev
+  logLevel: INFO
+  logFormat: json

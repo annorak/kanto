@@ -1,0 +1,98 @@
+{{- if .Values.otelCollector.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: observability
+  labels:
+    {{- include "bootstrap.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+spec:
+  replicas: {{ .Values.otelCollector.replicas }}
+  strategy:
+    {{- if eq (int .Values.otelCollector.replicas) 1 }}
+    # Single-replica clusters can't double-schedule the pod during a
+    # rolling update on a CPU-constrained node. Recreate avoids the
+    # surge.
+    type: Recreate
+    {{- else }}
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: otel-collector
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: otel-collector
+      annotations:
+        # Force pod restart on config-map changes so the collector
+        # always re-reads the rendered config.
+        checksum/config: {{ include (print $.Template.BasePath "/otel-collector-config.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: otel-collector
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: otel-collector
+          image: "{{ .Values.otelCollector.image.repository }}:{{ .Values.otelCollector.image.tag }}"
+          imagePullPolicy: {{ .Values.otelCollector.image.pullPolicy }}
+          args:
+            - "--config=/etc/otel/config.yaml"
+          env:
+            {{- if .Values.otelCollector.applicationInsightsConnectionString }}
+            - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+              value: {{ .Values.otelCollector.applicationInsightsConnectionString | quote }}
+            {{- end }}
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+              protocol: TCP
+            - name: otlp-http
+              containerPort: 4318
+              protocol: TCP
+            - name: metrics
+              containerPort: 8888
+              protocol: TCP
+            - name: health
+              containerPort: 13133
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otel
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            failureThreshold: 6
+            periodSeconds: 10
+            initialDelaySeconds: 15
+          readinessProbe:
+            tcpSocket:
+              port: otlp-http
+            periodSeconds: 5
+            initialDelaySeconds: 5
+          resources:
+            {{- toYaml .Values.otelCollector.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector-config
+{{- end }}

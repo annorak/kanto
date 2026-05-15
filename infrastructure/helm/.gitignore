@@ -1,0 +1,4 @@
+# Helm dependency vendoring + render output. Rebuilt by `make ci`.
+.rendered/
+**/charts/*.tgz
+**/Chart.lock

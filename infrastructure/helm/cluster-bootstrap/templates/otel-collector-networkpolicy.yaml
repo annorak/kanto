@@ -1,0 +1,76 @@
+{{- if and .Values.otelCollector.enabled .Values.networkPolicies.defaultDeny }}
+# Default-deny in observability + an explicit allow for the OTel
+# collector. Without this, the default-deny below would block all
+# traffic to the collector.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: observability
+  labels:
+    {{- include "bootstrap.commonLabels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-collector-allow
+  namespace: observability
+  labels:
+    {{- include "bootstrap.commonLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow OTLP from every kanto-* namespace.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kanto.io/scope: services
+      ports:
+        - port: 4317
+          protocol: TCP
+        - port: 4318
+          protocol: TCP
+    # Allow Prometheus scrape from within observability.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kanto.io/scope: monitoring
+      ports:
+        - port: 8888
+          protocol: TCP
+  egress:
+    # CoreDNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # k8sattributes processor needs the apiserver.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+{{- end }}

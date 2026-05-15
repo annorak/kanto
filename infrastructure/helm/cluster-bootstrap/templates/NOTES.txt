@@ -1,0 +1,47 @@
+kanto-cluster-bootstrap {{ .Chart.AppVersion }} installed.
+
+Environment:  {{ .Values.environment }}
+Cluster name: {{ .Values.clusterName }}
+
+What just got created:
+{{- if .Values.namespaces.observability.create }}
+  * Namespace observability (labeled kanto.io/scope=monitoring)
+{{- end }}
+{{- range .Values.namespaces.kantoServices }}
+  * Namespace {{ . }} (labeled kanto.io/scope=services)
+{{- end }}
+{{- if .Values.networkPolicies.defaultDeny }}
+  * Default-deny NetworkPolicy in every namespace above
+{{- end }}
+{{- if .Values.otelCollector.enabled }}
+  * OTel Collector Deployment + Service in observability ({{ .Values.otelCollector.replicas }} replica(s))
+{{- end }}
+
+Verify cluster prerequisites that this chart does NOT manage:
+
+  1. Secrets Store CSI Driver (AKS addon)
+     kubectl -n {{ .Values.verify.csiDriverNamespace }} get deployment {{ .Values.verify.csiDriverDeployment }}
+     If absent, enable via Terraform (preferred) or one-time:
+       az aks enable-addons -g <rg> -n <cluster> \
+         --addons azure-keyvault-secrets-provider
+
+  2. Workload Identity (OIDC issuer + webhook)
+     kubectl get pods -n kube-system -l app=azure-wi-webhook-controller-manager
+     Already enabled in the AKS module via workload_identity_enabled=true.
+
+  3. Federated credentials per service
+     az identity federated-credential list \
+       --identity-name kanto-{{ .Values.environment }}-aks-workloads \
+       --resource-group <rg>
+     Each kanto-<service> namespace's service account needs an entry.
+     This is wired in subsequent service tasks (5-9).
+
+Test the OTel collector:
+
+  kubectl -n observability port-forward svc/otel-collector 4318:4318
+  curl -i http://localhost:4318/v1/traces -H 'content-type: application/json' \
+    -d '{"resourceSpans":[]}'   # expect HTTP 200
+
+Service charts can now install pointing at:
+
+  http://otel-collector.observability.svc.cluster.local:4318

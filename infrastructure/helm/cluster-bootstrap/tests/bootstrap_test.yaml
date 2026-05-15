@@ -1,0 +1,164 @@
+suite: cluster-bootstrap manifests
+templates:
+  - templates/namespaces.yaml
+  - templates/default-deny.yaml
+  - templates/otel-collector-rbac.yaml
+  - templates/otel-collector-config.yaml
+  - templates/otel-collector-deployment.yaml
+  - templates/otel-collector-service.yaml
+  - templates/otel-collector-networkpolicy.yaml
+
+release:
+  name: bootstrap
+  namespace: kube-system
+
+tests:
+  - it: creates the observability namespace with monitoring scope label
+    template: templates/namespaces.yaml
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: Namespace
+      - equal:
+          path: metadata.name
+          value: observability
+      - equal:
+          path: metadata.labels["kanto.io/scope"]
+          value: monitoring
+
+  - it: creates one Namespace per kanto service
+    template: templates/namespaces.yaml
+    asserts:
+      - hasDocuments:
+          count: 7   # observability + 6 kanto-* namespaces by default
+
+  - it: every kanto service namespace is scoped "services"
+    template: templates/namespaces.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: metadata.labels["kanto.io/scope"]
+          value: services
+
+  - it: default-deny NetworkPolicy is created in every kanto namespace
+    template: templates/default-deny.yaml
+    asserts:
+      - hasDocuments:
+          count: 6
+      - isKind:
+          of: NetworkPolicy
+      - equal:
+          path: metadata.name
+          value: default-deny
+      - equal:
+          path: spec.podSelector
+          value: {}
+      - contains:
+          path: spec.policyTypes
+          content: Ingress
+      - contains:
+          path: spec.policyTypes
+          content: Egress
+
+  - it: OTel collector ServiceAccount + ClusterRole/Binding are created
+    template: templates/otel-collector-rbac.yaml
+    asserts:
+      - hasDocuments:
+          count: 3
+      - containsDocument:
+          kind: ServiceAccount
+          apiVersion: v1
+          name: otel-collector
+          namespace: observability
+        documentIndex: 0
+      - containsDocument:
+          kind: ClusterRole
+          apiVersion: rbac.authorization.k8s.io/v1
+          name: otel-collector
+        documentIndex: 1
+      - containsDocument:
+          kind: ClusterRoleBinding
+          apiVersion: rbac.authorization.k8s.io/v1
+          name: otel-collector
+        documentIndex: 2
+
+  - it: OTel collector config renders environment + cluster name
+    template: templates/otel-collector-config.yaml
+    set:
+      environment: dev
+      clusterName: kanto-dev-aks
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "deployment.environment"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "kanto-dev-aks"
+
+  - it: OTel collector Deployment ships the secure baseline
+    template: templates/otel-collector-deployment.yaml
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          content: ALL
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: otel-collector
+
+  - it: OTel collector Service exposes OTLP 4317 + 4318
+    template: templates/otel-collector-service.yaml
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.ports[0].port
+          value: 4317
+      - equal:
+          path: spec.ports[1].port
+          value: 4318
+
+  - it: OTel collector NetworkPolicy allows OTLP from kanto-* and DNS egress
+    template: templates/otel-collector-networkpolicy.yaml
+    documentIndex: 1
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+      - equal:
+          path: spec.podSelector.matchLabels["app.kubernetes.io/name"]
+          value: otel-collector
+      - equal:
+          path: spec.ingress[0].from[0].namespaceSelector.matchLabels["kanto.io/scope"]
+          value: services
+
+  - it: OTel collector exports to debug when no App Insights connection set
+    template: templates/otel-collector-config.yaml
+    set:
+      otelCollector.debugExporter: true
+      otelCollector.applicationInsightsConnectionString: ""
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "exporters:\\s*\\n\\s*debug:"
+
+  - it: OTel collector exports to App Insights when connection string set
+    template: templates/otel-collector-config.yaml
+    set:
+      otelCollector.debugExporter: false
+      otelCollector.applicationInsightsConnectionString: "InstrumentationKey=00000000-0000-0000-0000-000000000000;IngestionEndpoint=https://eastus.in.applicationinsights.azure.com/"
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "azuremonitor:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "\\$\\{env:APPLICATIONINSIGHTS_CONNECTION_STRING\\}"

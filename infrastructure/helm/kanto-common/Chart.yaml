@@ -1,0 +1,25 @@
+apiVersion: v2
+name: kanto-common
+description: |
+  Shared Helm library chart for Kanto services. Provides named templates
+  (labels, annotations, probes, network policies, resource presets,
+  workload-identity service accounts, and Key Vault SecretProviderClass)
+  that every per-service chart imports.
+
+  Library charts produce no resources of their own. To use it, list it as
+  a `dependencies` entry in your service Chart.yaml and `include` the
+  templates by name in your manifests.
+type: library
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.30.0-0"
+maintainers:
+  - name: Kanto Platform
+    email: kanto-platform@example.com
+keywords:
+  - kanto
+  - library
+  - aks
+home: https://github.com/annorak/kanto
+sources:
+  - https://github.com/annorak/kanto

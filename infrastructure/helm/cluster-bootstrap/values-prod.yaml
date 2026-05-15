@@ -1,0 +1,15 @@
+environment: prod
+clusterName: kanto-prod-aks
+
+otelCollector:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  # Set via --set or a sealed env secret; do NOT commit the
+  # connection string.
+  applicationInsightsConnectionString: ""
+  debugExporter: false

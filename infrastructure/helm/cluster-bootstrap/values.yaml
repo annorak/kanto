@@ -1,0 +1,54 @@
+# Bootstrap chart values. Override per-env via values-{dev,prod}.yaml.
+
+environment: dev                        # sets the kanto.io/environment label
+clusterName: kanto-dev-aks              # logs/traces resource attribute
+
+# The chart manages these namespaces (creates + labels). Add new
+# service namespaces here when new services are introduced.
+namespaces:
+  observability:
+    create: true
+    extraLabels: {}
+  kantoServices:
+    - kanto-snorlax
+    - kanto-chatot
+    - kanto-alakazam
+    - kanto-growlithe
+    - kanto-ditto
+    - kanto-api
+
+# Default-deny network policy applied to every kanto-* namespace.
+# Per-service charts add their own allow rules on top.
+networkPolicies:
+  defaultDeny: true
+
+# In-cluster OpenTelemetry collector. Receives OTLP on 4317 (gRPC) and
+# 4318 (HTTP) from service pods; exports to Application Insights via
+# the Azure Monitor exporter.
+otelCollector:
+  enabled: true
+  image:
+    repository: otel/opentelemetry-collector-contrib
+    # Pin to a digest in CI to keep the bootstrap reproducible.
+    tag: "0.117.0"
+    pullPolicy: IfNotPresent
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  # When set, the collector exports to App Insights via the Azure
+  # Monitor exporter. Leave empty to log spans to stdout (dev default).
+  applicationInsightsConnectionString: ""
+  # When true, the collector additionally exports to a debug exporter
+  # for local-cluster sanity checks. Set false in prod.
+  debugExporter: true
+
+# Verification toggles. The NOTES.txt at install time prints a
+# checklist of follow-ups that depend on cluster state outside Helm's
+# control (CSI driver addon, federated credentials).
+verify:
+  csiDriverNamespace: kube-system
+  csiDriverDeployment: aks-secrets-store-csi-driver

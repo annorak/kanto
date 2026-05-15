@@ -1,0 +1,33 @@
+{{- /*
+Manage the observability namespace + every kanto-* service namespace.
+Per-service charts install with --create-namespace, but they would
+miss the cluster-wide labels we attach here (NetworkPolicy scope,
+Container Insights kanto.io/environment). Creating them centrally
+keeps those labels in one place.
+*/ -}}
+
+{{- if .Values.namespaces.observability.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    {{- include "bootstrap.commonLabels" . | nindent 4 }}
+    kanto.io/scope: monitoring
+    {{- range $k, $v := .Values.namespaces.observability.extraLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+---
+{{- end }}
+
+{{- range $ns := .Values.namespaces.kantoServices }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $ns }}
+  labels:
+    {{- include "bootstrap.commonLabels" $ | nindent 4 }}
+    kanto.io/scope: services
+    kubernetes.io/metadata.name: {{ $ns }}
+---
+{{- end }}

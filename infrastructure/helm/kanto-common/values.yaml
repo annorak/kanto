@@ -1,0 +1,108 @@
+# Library charts do not consume values directly; templates use values
+# from the *importing* chart. This file exists only so `helm lint` is
+# satisfied and so authors can read the conventional defaults the
+# library expects in a parent chart's values.yaml.
+#
+# Mirror these keys in every service chart's values.yaml.
+
+image:
+  registry: ""              # ACR FQDN, e.g. kantodevacr.azurecr.io
+  repository: ""            # service repo within the registry, e.g. kanto-snorlax
+  tag: ""                   # MUST be a Git SHA in prod. `latest` is rejected.
+  pullPolicy: IfNotPresent
+  pullSecrets: []           # Empty when ACR is attached to AKS via managed identity.
+
+# AKS workload identity. clientId comes from terraform output
+# `aks_workload_identity_client_id`. tenantId is your AAD tenant ID.
+workloadIdentity:
+  enabled: true
+  clientId: ""
+  tenantId: ""
+
+# Azure Key Vault secret references. The library renders one
+# SecretProviderClass per service that mounts these from the cluster
+# Key Vault and (optionally) syncs them into a K8s Secret so they show
+# up as env vars.
+keyVault:
+  name: ""                  # Vault name (NOT URI), e.g. kanto-dev-kv-ab12cd
+  tenantId: ""              # Same as workloadIdentity.tenantId
+  # secrets is a list of {objectName, alias?, envVar?, file?}.
+  # - objectName: name in Key Vault (e.g. kanto-dev-mew-password)
+  # - alias:      filename to mount as (defaults to objectName)
+  # - envVar:     if set, the SecretProviderClass syncs this to a K8s
+  #               Secret and a deployment helper injects it as env.
+  # - file:       set true for cert/key files that should NOT sync to a
+  #               K8s Secret (TLS materials).
+  secrets: []
+
+# OTel exporter endpoint — usually the in-cluster collector service.
+# kanto-commons reads OTEL_EXPORTER_OTLP_ENDPOINT from the env.
+otel:
+  endpoint: "http://otel-collector.observability.svc.cluster.local:4318"
+  sampleRate: 1.0
+  protocol: "http/protobuf"
+
+# Prometheus scrape annotations. v1 uses Azure Monitor managed Prometheus
+# which honors the `prometheus.io/*` annotations on pods.
+prometheus:
+  scrape: true
+  port: 9464
+  path: "/metrics"
+
+# Resource preset name: small | medium | large | xlarge.
+# Pick the smallest preset that meets your service's SLOs.
+# CPU requests only; no CPU limits (avoids throttling — see CONVENTIONS.md).
+resources:
+  preset: "small"
+  # Override individual fields with `resources.overrides.requests.memory` etc.
+  overrides: {}
+
+# Probe configuration. kanto-commons exposes /healthz (liveness) and
+# /readyz (readiness) on the health port.
+probes:
+  port: 8081
+  liveness:
+    path: "/healthz"
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readiness:
+    path: "/readyz"
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Network policy. Default-deny is always rendered. `allow` lists below
+# specify per-service exceptions.
+networkPolicy:
+  enabled: true
+  # Pods that may talk TO this service (typical: API/gateway -> backend).
+  allowFromPods: []         # list of {namespace, podLabels}
+  # Egress destinations beyond the default platform allows.
+  allowToPods: []           # list of {namespace, podLabels, ports}
+  # Cluster-external CIDRs/ports this service must reach.
+  allowToCidrs: []          # list of {cidr, ports}
+
+# Service / namespace metadata.
+service:
+  type: ClusterIP
+  port: 8080                # application port (HTTP)
+  metricsPort: 9464         # prometheus scrape port
+
+# Additional pod-level overrides. Most services should not need these.
+pod:
+  annotations: {}
+  labels: {}
+  topologySpreadConstraints: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# kanto-commons env-prefix knobs surfaced for convenience. These map
+# onto KantoBaseSettings in kanto-commons/config.py.
+kanto:
+  environment: "dev"
+  logLevel: "INFO"
+  logFormat: "json"

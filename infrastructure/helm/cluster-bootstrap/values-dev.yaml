@@ -1,0 +1,7 @@
+environment: dev
+clusterName: kanto-dev-aks
+
+otelCollector:
+  replicas: 1                # single replica in dev
+  applicationInsightsConnectionString: ""
+  debugExporter: true

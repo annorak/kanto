@@ -1,0 +1,57 @@
+name: helm
+
+on:
+  pull_request:
+    paths:
+      - "infrastructure/helm/**"
+      - "services/*/helm/**"
+      - ".github/workflows/helm.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "infrastructure/helm/**"
+      - "services/*/helm/**"
+      - ".github/workflows/helm.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  helm:
+    name: lint + template + kubeconform + unittest
+    runs-on: ubuntu-latest
+    env:
+      # Pin to the version matching the AKS cluster (see
+      # infrastructure/terraform/config/dev.tfvars: aks_kubernetes_version).
+      KUBE_VERSION: "1.34.0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v4.2.0
+
+      - name: Install kubeconform
+        run: |
+          set -euo pipefail
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz \
+            | tar -xz -C /usr/local/bin kubeconform
+          kubeconform -v
+
+      - name: Install helm-unittest plugin
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest.git --verify=false
+
+      - name: helm lint + template + kubeconform + unittest
+        working-directory: infrastructure/helm
+        run: make ci KUBE_VERSION=${KUBE_VERSION}
+
+      - name: Upload rendered manifests on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendered-manifests
+          path: infrastructure/helm/.rendered/
+          if-no-files-found: ignore

@@ -1,0 +1,35 @@
+apiVersion: v2
+name: kanto-cluster-bootstrap
+description: |
+  Cluster-wide infrastructure deployed once per AKS cluster, before any
+  service charts. Owns:
+    * the `observability` namespace
+    * the `kanto-*` service namespaces, each labeled for NetworkPolicy
+      scope and Container Insights ingestion
+    * default-deny NetworkPolicy in every kanto-* namespace
+    * the in-cluster OpenTelemetry Collector (Deployment + Service)
+    * a placeholder ClusterRole/Binding the OTel collector uses for
+      k8sattributes processor enrichment
+
+  Does NOT install the Secrets Store CSI Driver: that's an AKS managed
+  addon (`azure-keyvault-secrets-provider`), enabled via Terraform on
+  the AKS module. The bootstrap chart verifies the addon is present
+  via a NOTES.txt postinstall message.
+
+  Does NOT install FluentBit: Container Insights already collects pod
+  stdout/stderr.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.30.0-0"
+maintainers:
+  - name: Kanto Platform
+    email: kanto-platform@example.com
+keywords:
+  - kanto
+  - bootstrap
+  - aks
+  - observability
+home: https://github.com/annorak/kanto
+sources:
+  - https://github.com/annorak/kanto

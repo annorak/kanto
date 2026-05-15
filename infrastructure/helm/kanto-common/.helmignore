@@ -1,0 +1,4 @@
+# Ignore test fixtures when packaging.
+tests/
+*.tgz
+.DS_Store

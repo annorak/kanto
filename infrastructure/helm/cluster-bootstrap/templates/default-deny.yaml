@@ -1,0 +1,26 @@
+{{- /*
+Default-deny NetworkPolicy in every kanto-* service namespace.
+Per-service charts then layer explicit allows via the
+kanto-common.networkPolicy helper.
+
+A separate default-deny lives in `observability` too, with an allow
+for the OTel collector (rendered in the collector template).
+*/ -}}
+
+{{- if .Values.networkPolicies.defaultDeny }}
+{{- range $ns := .Values.namespaces.kantoServices }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: {{ $ns }}
+  labels:
+    {{- include "bootstrap.commonLabels" $ | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+{{- end }}
+{{- end }}
