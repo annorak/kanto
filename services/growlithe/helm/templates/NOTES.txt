@@ -1,0 +1,20 @@
+{{ .Chart.Name }} {{ .Chart.AppVersion }} installed in namespace {{ .Release.Namespace }}.
+
+Image: {{ include "kanto-common.image" . }}
+
+Verify Growlithe is up and tracking the right organisms:
+
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/name={{ include "kanto-common.name" . }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "kanto-common.fullname" . }} 8081:{{ .Values.probes.port }}
+  curl http://localhost:8081{{ .Values.probes.readiness.path }}
+
+Tail the most recent poll cycle (look for "growlithe.pipeline: cycle done"):
+
+  kubectl -n {{ .Release.Namespace }} logs -l app.kubernetes.io/name={{ include "kanto-common.name" . }} --tail=200 -f
+
+Trigger a one-shot poll cycle without waiting for the timer:
+
+  kubectl -n {{ .Release.Namespace }} set env deploy/{{ include "kanto-common.fullname" . }} KANTO_GROWLITHE_RUN_ONCE=true
+  kubectl -n {{ .Release.Namespace }} rollout restart deploy/{{ include "kanto-common.fullname" . }}
+
+Don't forget to set ``KANTO_GROWLITHE_RUN_ONCE=false`` again afterwards.

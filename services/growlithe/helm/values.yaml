@@ -1,0 +1,132 @@
+# Defaults shared across environments. Each entry corresponds to a
+# value the kanto-common library templates read; see
+# infrastructure/helm/CONVENTIONS.md for the contract.
+
+image:
+  registry: ""              # ACR FQDN, e.g. kantodevacr.azurecr.io
+  repository: kanto-growlithe
+  tag: ""                   # MUST be a Git SHA in prod. `latest` is rejected.
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+workloadIdentity:
+  enabled: true
+  clientId: ""              # terraform output aks_workload_identity_client_id
+  tenantId: ""              # AAD tenant ID
+
+keyVault:
+  name: ""                  # vault name (NOT URI), e.g. kanto-dev-kv-ab12cd
+  tenantId: ""              # same as workloadIdentity.tenantId
+  secrets:
+    # Mew password — pulled by name from the per-env vault. The CSI
+    # driver mounts it at /var/run/secrets/kanto/mew-password and
+    # syncs into a K8s Secret so the env var below picks it up.
+    - objectName: ""        # set per-env (e.g. kanto-dev-mew-password)
+      alias: mew-password
+      envVar: KANTO_MEW_PASSWORD
+    # Event Hubs SASL connection string. Acts as the SASL/PLAIN
+    # password against the Event Hubs Kafka endpoint.
+    - objectName: ""        # set per-env (e.g. kanto-dev-eventhubs-connection)
+      alias: eventhubs-connection
+      envVar: KANTO_STREAMING_SASL_PASSWORD
+
+otel:
+  endpoint: "http://otel-collector.observability.svc.cluster.local:4318"
+  sampleRate: 1.0
+  protocol: "http/protobuf"
+
+prometheus:
+  scrape: true
+  port: 9464
+  path: "/metrics"
+
+resources:
+  preset: "small"
+  overrides: {}
+
+probes:
+  port: 8081
+  liveness:
+    path: "/healthz"
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    path: "/readyz"
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Growlithe has no inbound HTTP traffic from other kanto pods — it
+# only polls outward. The library's networkPolicy already permits
+# Prometheus scrape on the metrics port plus HTTPS egress to the
+# public internet (which covers NCBI, Azure Blob, Event Hubs, ACR,
+# and Key Vault). Egress to Mew (private Postgres) goes via the
+# cluster's RFC1918 routes; we add a per-service allow below.
+networkPolicy:
+  enabled: true
+  allowFromPods: []
+  allowToPods: []
+  allowToCidrs: []
+  # The Mew private-link IP is environment-specific; values-{env}.yaml
+  # overrides allowToCidrs to permit egress to the postgres flexible-
+  # server private endpoint. Without it, default-deny blocks Mew.
+
+service:
+  type: ClusterIP
+  port: 8080                # unused — Growlithe has no inbound app traffic
+  metricsPort: 9464
+
+pod:
+  annotations: {}
+  labels: {}
+  topologySpreadConstraints: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+kanto:
+  environment: "dev"
+  logLevel: "INFO"
+  logFormat: "json"
+
+# Growlithe-specific configuration. The deployment template renders
+# every key/value pair under ``growlithe.env`` into the container
+# environment as a ``KANTO_GROWLITHE_*`` variable. Use values-dev /
+# values-prod to override per environment.
+growlithe:
+  # Service-specific env block. Each key becomes one env var with the
+  # KANTO_GROWLITHE_ prefix (see _helpers.tpl). Lists/ints stringify.
+  organisms: ""             # blank → uses growlithe.organisms.DEFAULT_ORGANISMS
+  pollIntervalSeconds: 21600
+  pollJitterSeconds: 60
+  ncbiBaseUrl: "https://ftp.ncbi.nlm.nih.gov/pathogen/Results/"
+  ncbiRequestTimeoutSeconds: 300
+  ncbiMaxAttempts: 5
+  ncbiMaxConcurrent: 2
+  runOnce: false
+
+# Object Storage container names. Overridden per env so prod points
+# at kanto-metadata-prod, dev at kanto-metadata-dev, etc.
+objectStorage:
+  accountUrl: ""                            # https://kanto<env>data<suffix>.blob.core.windows.net
+  proteinsContainer: "kanto-proteins"
+  embeddingsContainer: "kanto-embeddings"
+  metadataContainer: "kanto-metadata"
+
+# Mew (Azure Postgres Flexible Server) connection details. Password
+# is sourced from Key Vault via the SecretProviderClass above.
+mew:
+  host: ""                  # e.g. kanto-dev-mew-store.postgres.database.azure.com
+  port: 5432
+  database: "kanto"
+  user: "kanto_admin"
+  sslmode: "verify-full"
+
+# Event Hubs Kafka endpoint. SASL password is sourced from Key Vault.
+streaming:
+  bootstrapServers: ""      # e.g. kanto-dev-eh.servicebus.windows.net:9093
+  saslUsername: "$ConnectionString"
+  discoveredTopic: "kanto.discovered"

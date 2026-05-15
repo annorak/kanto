@@ -1,0 +1,75 @@
+{{/*
+Composed pod spec — we don't use the library's monolithic
+``kanto-common.podSpec`` here because Growlithe needs to inject its
+own env vars on top of ``kanto-common.standardEnv``. Every other
+piece (security context, probes, resources, secrets volume mount)
+comes from named library helpers so the convention stays uniform.
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kanto-common.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kanto-common.labels" . | nindent 4 }}
+spec:
+  # Singleton: Growlithe is a single-writer poll loop per organism.
+  # Kubernetes restarts on failure; HPA is not enabled.
+  replicas: 1
+  strategy:
+    # Recreate prevents two pods polling and racing on the cursor
+    # row during a rolling deploy.
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "kanto-common.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kanto-common.podLabels" . | nindent 8 }}
+      annotations:
+        {{- include "kanto-common.podAnnotations" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "kanto-common.serviceAccountName" . }}
+      terminationGracePeriodSeconds: 300
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with (include "kanto-common.secretsVolume" .) }}
+      volumes:
+        {{- . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ include "kanto-common.name" . }}
+          image: {{ include "kanto-common.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.service.metricsPort }}
+              protocol: TCP
+            - name: health
+              containerPort: {{ .Values.probes.port }}
+              protocol: TCP
+          env:
+            {{- include "kanto-common.standardEnv" . | nindent 12 }}
+            {{- include "kanto-growlithe.serviceEnv" . | nindent 12 }}
+          livenessProbe:
+            {{- include "kanto-common.livenessProbe" . | nindent 12 }}
+          readinessProbe:
+            {{- include "kanto-common.readinessProbe" . | nindent 12 }}
+          resources:
+            {{- include "kanto-common.resources" . | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          {{- with (include "kanto-common.secretsVolumeMount" .) }}
+          volumeMounts:
+            {{- . | nindent 12 }}
+          {{- end }}

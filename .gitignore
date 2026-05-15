@@ -23,6 +23,7 @@
 #   9. Generic credential-shaped filenames at root and one level deep
 #  10. Operator-local task spec files (kept out of repo)
 #  11. Project-specific outputs (genome data, model weights)
+#  12. Helm build artifacts (charts/*.tgz + Chart.lock under service charts)
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -265,3 +266,12 @@ data/
 models/
 !models/.gitkeep
 weights/
+
+# -----------------------------------------------------------------------------
+# 12. Helm build artifacts
+# -----------------------------------------------------------------------------
+# `helm dependency update` writes both a Chart.lock and pulls each
+# dependency into charts/*.tgz. Per infrastructure/helm/CONVENTIONS.md
+# both are rebuilt in CI from Chart.yaml, so keep them out of the repo.
+services/*/helm/charts/
+services/*/helm/Chart.lock

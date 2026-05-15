@@ -1,0 +1,45 @@
+# Test-only values; mirrors what a real install passes via tf-output
+# wiring (see values-dev.yaml comments). Kept in tests/ so production
+# tooling never picks it up accidentally.
+
+image:
+  registry: kantodevacr.azurecr.io
+  repository: kanto-growlithe
+  tag: deadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+  pullPolicy: IfNotPresent
+
+workloadIdentity:
+  enabled: true
+  clientId: 00000000-0000-0000-0000-000000000001
+  tenantId: 00000000-0000-0000-0000-000000000002
+
+keyVault:
+  name: kanto-dev-kv-ab12cd
+  tenantId: 00000000-0000-0000-0000-000000000002
+  secrets:
+    - objectName: kanto-dev-mew-password
+      alias: mew-password
+      envVar: KANTO_MEW_PASSWORD
+    - objectName: kanto-dev-eventhubs-connection
+      alias: eventhubs-connection
+      envVar: KANTO_STREAMING_SASL_PASSWORD
+
+mew:
+  host: kanto-dev-mew-store.postgres.database.azure.com
+
+objectStorage:
+  accountUrl: https://kantodevdata1234.blob.core.windows.net
+  metadataContainer: kanto-metadata-dev
+  proteinsContainer: kanto-proteins-dev
+  embeddingsContainer: kanto-embeddings-dev
+
+streaming:
+  bootstrapServers: kanto-dev-eh.servicebus.windows.net:9093
+
+networkPolicy:
+  enabled: true
+  allowToCidrs:
+    - cidr: 10.0.0.0/16
+      ports:
+        - port: 5432
+          protocol: TCP

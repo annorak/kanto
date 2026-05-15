@@ -3,13 +3,13 @@
 The module exposes :class:`KantoBaseSettings`, the parent class every
 service derives from to add its own service-specific config. The base
 class itself contains the universal config that every service needs:
-Mew connection details, OS bucket names, OCI Streaming endpoints, and
-observability endpoints.
+Mew connection details, Azure Blob container names, Azure Event Hubs
+(Kafka API) endpoints, and observability endpoints.
 
 Configuration is **only** loaded from environment variables. Files
 committed to the repo (``.envrc``, ``.envrc.example``) supply env vars
-in dev; OCI Vault → Helm → pod env supplies them in production. We
-never read a TOML/YAML/JSON config file.
+in dev; Azure Key Vault → Helm → pod env supplies them in production.
+We never read a TOML/YAML/JSON config file.
 
 Naming convention
 -----------------
@@ -131,7 +131,16 @@ class MewSettings(BaseSettings):
 
 
 class ObjectStorageSettings(BaseSettings):
-    """OCI Object Storage bucket and namespace settings."""
+    """Azure Blob Storage account and container settings.
+
+    The ``account_url`` is the storage account's blob endpoint (e.g.
+    ``https://kantodevdata1234.blob.core.windows.net``). Authentication
+    in the cluster is via :class:`azure.identity.DefaultAzureCredential`
+    — AKS Workload Identity surfaces the AKS-workloads UAMI, which
+    Terraform grants ``Storage Blob Data Contributor`` on the proteins
+    and metadata containers and ``Storage Blob Data Reader`` on the
+    embeddings container.
+    """
 
     model_config = SettingsConfigDict(
         env_prefix="KANTO_OS_",
@@ -141,24 +150,57 @@ class ObjectStorageSettings(BaseSettings):
         populate_by_name=True,
     )
 
-    namespace: str = Field(
+    account_url: str = Field(
         ...,
-        validation_alias=AliasChoices("KANTO_OS_NAMESPACE"),
-        description="OCI Object Storage namespace (per-tenancy unique).",
+        validation_alias=AliasChoices(
+            "KANTO_OS_ACCOUNT_URL",
+            "AZURE_STORAGE_BLOB_ENDPOINT",
+        ),
+        description=(
+            "Blob endpoint of the storage account, e.g. "
+            "https://kantodevdata1234.blob.core.windows.net"
+        ),
     )
-    region: str = Field(
-        ...,
-        validation_alias=AliasChoices("KANTO_OS_REGION"),
+    proteins_container: str = Field(
+        default="kanto-proteins",
+        validation_alias=AliasChoices("KANTO_OS_PROTEINS_CONTAINER"),
     )
-    proteins_bucket: str = Field(default="kanto-proteins")
-    embeddings_bucket: str = Field(default="kanto-embeddings")
-    cache_bucket: str = Field(default="kanto-cache")
-    # Connection pool size for OCI SDK requests session.
-    max_connections: int = Field(default=20, ge=1, le=200)
+    embeddings_container: str = Field(
+        default="kanto-embeddings",
+        validation_alias=AliasChoices("KANTO_OS_EMBEDDINGS_CONTAINER"),
+    )
+    metadata_container: str = Field(
+        default="kanto-metadata",
+        validation_alias=AliasChoices(
+            "KANTO_OS_METADATA_CONTAINER",
+            # Old name kept as a fallback so dev .envrc files don't break
+            # mid-migration. Drop once everyone has updated.
+            "KANTO_OS_CACHE_BUCKET",
+        ),
+    )
+    # Tunables forwarded to the BlobServiceClient. Defaults match the SDK.
+    max_single_get_size: int = Field(
+        default=32 * 1024 * 1024,
+        ge=1,
+        description="Max bytes pulled in a single GET before chunking.",
+    )
+    max_single_put_size: int = Field(
+        default=64 * 1024 * 1024,
+        ge=1,
+        description="Max bytes uploaded in a single PUT before chunked upload.",
+    )
 
 
 class StreamingSettings(BaseSettings):
-    """OCI Streaming (Kafka API) settings."""
+    """Azure Event Hubs (Kafka API) settings.
+
+    Event Hubs exposes a Kafka-protocol endpoint per namespace. The
+    aiokafka client in :mod:`kanto_commons.streaming` connects to it
+    with SASL/SSL. For dev, ``sasl_username`` is ``$ConnectionString``
+    and ``sasl_password`` is the full SAS connection string sourced
+    from Azure Key Vault; for prod we will switch to OAUTHBEARER with
+    federated workload identity (separate follow-up).
+    """
 
     model_config = SettingsConfigDict(
         env_prefix="KANTO_STREAMING_",

@@ -84,6 +84,7 @@ def _wipe_schema(dsn: str) -> None:
         # Tables drop in dependency order; cascades pick up indexes,
         # triggers, sequences. Alembic's version table is dropped
         # explicitly so no migration appears to be applied.
+        conn.execute("DROP TABLE IF EXISTS discovery_cursors CASCADE")
         conn.execute("DROP TABLE IF EXISTS alerts CASCADE")
         conn.execute("DROP TABLE IF EXISTS genome_embeddings CASCADE")
         conn.execute("DROP TABLE IF EXISTS isolates CASCADE")

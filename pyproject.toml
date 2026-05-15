@@ -52,7 +52,11 @@ package = false
 #   services/ditto                 <- Task 7 (Modal)
 #   services/alakazam              <- Task 6
 #   services/chatot                <- Task 8
-members = ["libs/kanto-commons", "infrastructure/migrations"]
+members = [
+    "libs/kanto-commons",
+    "infrastructure/migrations",
+    "services/growlithe",
+]
 exclude = []
 
 # -----------------------------------------------------------------------------
@@ -131,8 +135,8 @@ disallow_untyped_defs = false
 # `mypy` invocation inside a single package.
 [[tool.mypy.overrides]]
 module = [
-    "oci.*",
     "aiokafka.*",
+    "azure.*",
     "pgvector.*",
     "testcontainers.*",
 ]

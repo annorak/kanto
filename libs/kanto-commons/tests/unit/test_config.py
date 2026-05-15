@@ -34,7 +34,12 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def os_keys() -> list[str]:
     import os
 
-    relevant_prefixes = ("KANTO_", "MEW_", "STREAMING_", "OCI_")
+    relevant_prefixes = (
+        "KANTO_",
+        "MEW_",
+        "STREAMING_",
+        "AZURE_STORAGE_",
+    )
     return [k for k in os.environ if k.startswith(relevant_prefixes)]
 
 
@@ -43,8 +48,10 @@ def _set_minimum_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("KANTO_MEW_DATABASE", "mew")
     monkeypatch.setenv("KANTO_MEW_USER", "kanto")
     monkeypatch.setenv("KANTO_MEW_PASSWORD", "supersecret")
-    monkeypatch.setenv("KANTO_OS_NAMESPACE", "tenancy-x")
-    monkeypatch.setenv("KANTO_OS_REGION", "us-sanjose-1")
+    monkeypatch.setenv(
+        "KANTO_OS_ACCOUNT_URL",
+        "https://kantodevdata1234.blob.core.windows.net",
+    )
     monkeypatch.setenv("KANTO_STREAMING_BOOTSTRAP", "kafka:9092")
 
 
@@ -90,8 +97,10 @@ def test_streaming_bootstrap_short_alias(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("KANTO_MEW_DATABASE", "mew")
     monkeypatch.setenv("KANTO_MEW_USER", "kanto")
     monkeypatch.setenv("KANTO_MEW_PASSWORD", "x")
-    monkeypatch.setenv("KANTO_OS_NAMESPACE", "ns")
-    monkeypatch.setenv("KANTO_OS_REGION", "r")
+    monkeypatch.setenv(
+        "KANTO_OS_ACCOUNT_URL",
+        "https://kantodevdata1234.blob.core.windows.net",
+    )
     monkeypatch.setenv("KANTO_STREAMING_BOOTSTRAP", "kafka:9092")
     settings = _SnorlaxSettings.load()
     assert settings.streaming.bootstrap_servers == "kafka:9092"
@@ -120,10 +129,10 @@ def test_missing_all_required_raises_validation_error() -> None:
         assert env_var in msg
 
 
-def test_object_storage_missing_namespace() -> None:
+def test_object_storage_missing_account_url() -> None:
     with pytest.raises(ValidationError) as exc:
         ObjectStorageSettings()  # type: ignore[call-arg]
-    assert "namespace" in str(exc.value).lower()
+    assert "account_url" in str(exc.value).lower()
 
 
 def test_streaming_missing_bootstrap() -> None:

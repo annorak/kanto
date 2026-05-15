@@ -32,10 +32,12 @@ repos:
         args: [--markdown-linebreak-ext=md]
       - id: end-of-file-fixer
       - id: check-yaml
-        # Allow Helm template YAML in later tasks; the template syntax is
-        # not valid YAML, and there is no useful linter for it at this
-        # stage.
-        exclude: '^infrastructure/helm/.*/templates/.*\.ya?ml$'
+        # Helm chart templates are not valid YAML on their own (they
+        # interleave Go templating directives). Exclude both the library
+        # chart templates under infrastructure/helm/ and every service
+        # chart's templates under services/*/helm/. helm-unittest +
+        # kubeconform validate the rendered output instead.
+        exclude: '^(infrastructure/helm/.*|services/.*/helm)/templates/.*\.ya?ml$'
       - id: check-toml
       - id: check-json
       - id: check-merge-conflict
@@ -116,7 +118,7 @@ repos:
         # their source paths to this command. The trade-off: we re-check
         # all packages on any Python change, but the suite is small and
         # mypy caches aggressively.
-        entry: uv run mypy libs/kanto-commons/src/kanto_commons
+        entry: uv run mypy libs/kanto-commons/src/kanto_commons services/growlithe/src/growlithe
         language: system
         types: [python]
         pass_filenames: false

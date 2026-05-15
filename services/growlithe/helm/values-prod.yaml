@@ -1,0 +1,63 @@
+# Prod environment overrides. Still single replica — Growlithe has
+# no per-partition work and Kubernetes restart-on-failure is enough.
+#
+# As with values-dev.yaml, every ``REPLACE_VIA_HELM_SET`` (or the all-
+# zero UUID / SHA) is a render-time placeholder. Real installs MUST
+# override via ``--set`` at install time. See the values-dev.yaml
+# header for the canonical install command.
+
+image:
+  registry: kantoprodacr.azurecr.io
+  # All-zero SHA is the obvious "REPLACE_ME" sentinel; the library
+  # rejects ``latest``.
+  tag: "0000000000000000000000000000000000000000"
+
+workloadIdentity:
+  enabled: true
+  clientId: "00000000-0000-0000-0000-000000000000"
+  tenantId: "00000000-0000-0000-0000-000000000000"
+
+keyVault:
+  name: REPLACE_VIA_HELM_SET
+  tenantId: "00000000-0000-0000-0000-000000000000"
+  secrets:
+    - objectName: REPLACE_VIA_HELM_SET
+      alias: mew-password
+      envVar: KANTO_MEW_PASSWORD
+    - objectName: REPLACE_VIA_HELM_SET
+      alias: eventhubs-connection
+      envVar: KANTO_STREAMING_SASL_PASSWORD
+
+mew:
+  host: REPLACE_VIA_HELM_SET
+
+objectStorage:
+  accountUrl: https://REPLACE_VIA_HELM_SET.blob.core.windows.net
+  proteinsContainer: kanto-proteins-prod
+  embeddingsContainer: kanto-embeddings-prod
+  metadataContainer: kanto-metadata-prod
+
+streaming:
+  bootstrapServers: REPLACE_VIA_HELM_SET.servicebus.windows.net:9093
+
+kanto:
+  environment: "prod"
+  logLevel: "INFO"
+  logFormat: "json"
+
+resources:
+  preset: "small"
+
+# Prod Mew is on a different VNet CIDR; operator sets the exact range.
+# Without this allow, default-deny blocks Mew.
+networkPolicy:
+  enabled: true
+  allowToCidrs:
+    - cidr: 10.10.0.0/16
+      ports:
+        - port: 5432
+          protocol: TCP
+
+growlithe:
+  pollIntervalSeconds: 21600
+  pollJitterSeconds: 300       # spread retries more widely in prod

@@ -1,0 +1,122 @@
+suite: kanto-growlithe rendering
+templates:
+  - templates/deployment.yaml
+  - templates/service.yaml
+  - templates/serviceaccount.yaml
+  - templates/networkpolicy.yaml
+  - templates/secretproviderclass.yaml
+
+release:
+  name: kanto-growlithe
+  namespace: kanto-growlithe
+
+values:
+  - test-values.yaml
+
+tests:
+  - it: Deployment is a singleton with Recreate strategy
+    template: templates/deployment.yaml
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: spec.replicas
+          value: 1
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
+
+  - it: image reference is composed from registry + repository + sha
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "kantodevacr.azurecr.io/kanto-growlithe:deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+
+  - it: latest tag is rejected by the library
+    template: templates/deployment.yaml
+    set:
+      image.tag: latest
+    asserts:
+      - failedTemplate: {}
+
+  - it: KANTO_GROWLITHE_* env vars are injected on top of standardEnv
+    template: templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KANTO_GROWLITHE_POLL_INTERVAL_SECONDS
+            value: "21600"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KANTO_GROWLITHE_NCBI_BASE_URL
+            value: "https://ftp.ncbi.nlm.nih.gov/pathogen/Results/"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KANTO_OS_METADATA_CONTAINER
+            value: "kanto-metadata-dev"
+
+  - it: Mew password env is wired from the synced K8s Secret
+    template: templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KANTO_MEW_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: kanto-growlithe-akv
+                key: KANTO_MEW_PASSWORD
+
+  - it: pod runs as non-root with read-only rootfs
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 65532
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+
+  - it: ServiceAccount carries workload-identity annotations
+    template: templates/serviceaccount.yaml
+    asserts:
+      - isKind:
+          of: ServiceAccount
+      - equal:
+          path: metadata.annotations["azure.workload.identity/client-id"]
+          value: 00000000-0000-0000-0000-000000000001
+
+  - it: NetworkPolicy permits Mew egress to the configured CIDR
+    template: templates/networkpolicy.yaml
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            to:
+              - ipBlock:
+                  cidr: 10.0.0.0/16
+            ports:
+              - port: 5432
+                protocol: TCP
+
+  - it: SecretProviderClass references the right vault and lists both secrets
+    template: templates/secretproviderclass.yaml
+    asserts:
+      - isKind:
+          of: SecretProviderClass
+      - equal:
+          path: spec.parameters.keyvaultName
+          value: kanto-dev-kv-ab12cd
+      - matchRegex:
+          path: spec.parameters.objects
+          pattern: "kanto-dev-mew-password"
+      - matchRegex:
+          path: spec.parameters.objects
+          pattern: "kanto-dev-eventhubs-connection"

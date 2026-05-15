@@ -29,6 +29,16 @@ infrastructure/migrations/
 The seed CLI lives at `scripts/seed-mew.py`; it is intentionally *not*
 inside this package because it is a developer-laptop tool.
 
+### Applied revisions
+
+| Revision | Added by  | Purpose                                                   |
+|----------|-----------|-----------------------------------------------------------|
+| `0001`   | Task 3    | Initial Mew schema (`isolates`, `genome_embeddings`, `alerts`) plus pgvector + HNSW. |
+| `0002`   | Task 5    | `discovery_cursors` per-source-organism poll cursor used by Growlithe. |
+
+When adding a new revision, append a row above and bump the
+``alembic current`` expectation in the relevant runbook steps.
+
 ---
 
 ## Connection routing

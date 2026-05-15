@@ -1,26 +1,28 @@
 # kanto-commons
 
 Shared Python library every Kanto service depends on. Holds the
-event schemas, the OCI Streaming / Object Storage / Mew (Postgres +
-pgvector) client wrappers, structured logging, OpenTelemetry tracing,
-configuration, and the test helpers services use in their own suites.
+event schemas, the Event Hubs (Kafka) / Azure Blob Storage / Mew
+(Postgres + pgvector) client wrappers, structured logging,
+OpenTelemetry tracing, configuration, and the test helpers services
+use in their own suites.
 
-> Status: built in Task 1. Coverage 91%, mypy strict, ruff clean.
+> Status: storage backend migrated from OCI to Azure Blob in Task 5
+> (v0.3.0). Coverage 85%+, mypy strict, ruff clean.
 
 ---
 
 ## What lives here, at a glance
 
-| Concern         | Module                                              |
-| --------------- | --------------------------------------------------- |
-| Event schemas   | `kanto_commons.schemas`                              |
-| Object Storage  | `kanto_commons.storage`                              |
-| Mew (Postgres)  | `kanto_commons.mew`                                  |
-| OCI Streaming   | `kanto_commons.streaming`                            |
-| Logging         | `kanto_commons.logging`                              |
-| Tracing         | `kanto_commons.tracing`                              |
-| Configuration   | `kanto_commons.config`                               |
-| Test helpers    | `kanto_commons.testing`                              |
+| Concern             | Module                                              |
+| ------------------- | --------------------------------------------------- |
+| Event schemas       | `kanto_commons.schemas`                              |
+| Azure Blob Storage  | `kanto_commons.storage`                              |
+| Mew (Postgres)      | `kanto_commons.mew`                                  |
+| Event Hubs (Kafka)  | `kanto_commons.streaming`                            |
+| Logging             | `kanto_commons.logging`                              |
+| Tracing             | `kanto_commons.tracing`                              |
+| Configuration       | `kanto_commons.config`                               |
+| Test helpers        | `kanto_commons.testing`                              |
 
 The most-used types are re-exported from the top level; service code
 should usually `from kanto_commons import IsolateDiscovered, ...`
@@ -90,21 +92,19 @@ attempt count.
 
 ### Object Storage wrapper
 
-Sync. Methods take keyword args; pool size is set on the
-`ObjectStorageSettings`. Builds canonical Kanto keys via
-`KeyBuilder`.
+Sync. Methods take keyword args; tunables (chunk thresholds) live on
+`ObjectStorageSettings`. Builds canonical Kanto keys via `KeyBuilder`.
 
 ```python
 from kanto_commons.storage import ObjectStorageClient, KeyBuilder
 
-os_client = ObjectStorageClient.from_oci_config(
-    settings=settings.object_storage,
-    oci_config=oci.config.from_file(),
-)
+# In-cluster: AKS Workload Identity is picked up automatically via
+# DefaultAzureCredential. Locally, ``az login`` works the same way.
+os_client = ObjectStorageClient.from_settings(settings=settings.object_storage)
 keys = KeyBuilder.from_settings(settings.object_storage)
 
 os_client.put_bytes(
-    bucket=keys.proteins_bucket,
+    container=keys.proteins_container,
     key=keys.protein_fasta_key("PDT001", 1),
     data=fasta_bytes,
     content_type="application/x-gzip",
@@ -116,9 +116,9 @@ os_client.put_bytes(
 FASTA never needs to fully sit in memory.
 
 Errors map to Kanto-specific exceptions (`ObjectNotFoundError`,
-`ObjectAlreadyExistsError`); the underlying `oci.exceptions.ServiceError`
-is treated as a transient on 5xx/429 and retried with exponential
-backoff via tenacity.
+`ObjectAlreadyExistsError`); the underlying
+`azure.core.exceptions.HttpResponseError` is treated as transient on
+5xx/429 and retried with exponential backoff via tenacity.
 
 ### Mew client + repositories
 
@@ -274,7 +274,7 @@ Integration tests that need real Postgres are marked
   coordinated producer/consumer updates. Adding optional fields with
   defaults is a minor change; renaming or removing fields is a major
   change.
-* The wrapper APIs deliberately do not leak `oci`, `aiokafka`, or
+* The wrapper APIs deliberately do not leak `azure-*`, `aiokafka`, or
   `psycopg` types. Callers can rely on the protocol surface and the
   in-memory fakes will keep working.
 * `bootstrap_schema` and the testcontainer fixture get replaced when

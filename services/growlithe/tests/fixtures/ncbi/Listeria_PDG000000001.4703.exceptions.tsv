@@ -1,0 +1,3 @@
+#target_acc	reason
+PDT000000020.3	low_quality_assembly
+PDT000000018.5	failed_kmer_threshold

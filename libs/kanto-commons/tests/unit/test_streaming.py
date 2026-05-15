@@ -1,4 +1,4 @@
-"""Unit tests for the OCI Streaming wrapper.
+"""Unit tests for the Event Hubs (Kafka API) streaming wrapper.
 
 We don't spin up a Kafka broker for unit tests — that's an
 integration concern. Instead we substitute the underlying

@@ -1,4 +1,4 @@
-"""In-memory test doubles for the OCI Object Storage and Streaming wrappers.
+"""In-memory test doubles for the Azure Blob and Streaming wrappers.
 
 Both fakes implement the same Protocol as the real client, so a
 service that depends on the protocol can swap in either at test time
@@ -30,9 +30,9 @@ class _StoredObject:
 
 
 class FakeObjectStorage:
-    """Dict-backed implementation of the OS protocol.
+    """Dict-backed implementation of the ObjectStorage protocol.
 
-    Storage layout: ``self._objects[bucket][key] -> _StoredObject``.
+    Storage layout: ``self._objects[container][key] -> _StoredObject``.
     """
 
     def __init__(self) -> None:
@@ -43,17 +43,17 @@ class FakeObjectStorage:
     def put_bytes(
         self,
         *,
-        bucket: str,
+        container: str,
         key: str,
         data: bytes,
         content_type: str | None = None,
         metadata: dict[str, str] | None = None,
         if_not_exists: bool = False,
     ) -> None:
-        bucket_store = self._objects.setdefault(bucket, {})
-        if if_not_exists and key in bucket_store:
-            raise ObjectAlreadyExistsError(f"{bucket}/{key}")
-        bucket_store[key] = _StoredObject(
+        store = self._objects.setdefault(container, {})
+        if if_not_exists and key in store:
+            raise ObjectAlreadyExistsError(f"{container}/{key}")
+        store[key] = _StoredObject(
             data=data,
             content_type=content_type,
             metadata=dict(metadata or {}),
@@ -62,7 +62,7 @@ class FakeObjectStorage:
     def put_stream(
         self,
         *,
-        bucket: str,
+        container: str,
         key: str,
         stream: IO[bytes],
         content_length: int,
@@ -72,7 +72,7 @@ class FakeObjectStorage:
     ) -> None:
         data = stream.read(content_length)
         self.put_bytes(
-            bucket=bucket,
+            container=container,
             key=key,
             data=data,
             content_type=content_type,
@@ -82,41 +82,41 @@ class FakeObjectStorage:
 
     # -------------------- reads --------------------
 
-    def get_bytes(self, *, bucket: str, key: str) -> bytes:
+    def get_bytes(self, *, container: str, key: str) -> bytes:
         try:
-            return self._objects[bucket][key].data
+            return self._objects[container][key].data
         except KeyError as exc:
-            raise ObjectNotFoundError(f"{bucket}/{key}") from exc
+            raise ObjectNotFoundError(f"{container}/{key}") from exc
 
     def get_stream(
-        self, *, bucket: str, key: str, chunk_size: int = 1024 * 1024
+        self, *, container: str, key: str, chunk_size: int = 1024 * 1024
     ) -> Iterator[bytes]:
-        data = self.get_bytes(bucket=bucket, key=key)
+        data = self.get_bytes(container=container, key=key)
         for offset in range(0, len(data), chunk_size):
             yield data[offset : offset + chunk_size]
 
-    def exists(self, *, bucket: str, key: str) -> bool:
-        return key in self._objects.get(bucket, {})
+    def exists(self, *, container: str, key: str) -> bool:
+        return key in self._objects.get(container, {})
 
-    def delete(self, *, bucket: str, key: str) -> None:
+    def delete(self, *, container: str, key: str) -> None:
         try:
-            del self._objects[bucket][key]
+            del self._objects[container][key]
         except KeyError as exc:
-            raise ObjectNotFoundError(f"{bucket}/{key}") from exc
+            raise ObjectNotFoundError(f"{container}/{key}") from exc
 
     def ping(self) -> bool:
         return True
 
     # -------------------- test-only inspection --------------------
 
-    def all_keys(self, bucket: str) -> list[str]:
-        return sorted(self._objects.get(bucket, {}).keys())
+    def all_keys(self, container: str) -> list[str]:
+        return sorted(self._objects.get(container, {}).keys())
 
-    def get_metadata(self, *, bucket: str, key: str) -> dict[str, str]:
+    def get_metadata(self, *, container: str, key: str) -> dict[str, str]:
         try:
-            return dict(self._objects[bucket][key].metadata)
+            return dict(self._objects[container][key].metadata)
         except KeyError as exc:
-            raise ObjectNotFoundError(f"{bucket}/{key}") from exc
+            raise ObjectNotFoundError(f"{container}/{key}") from exc
 
     def reset(self) -> None:
         self._objects.clear()

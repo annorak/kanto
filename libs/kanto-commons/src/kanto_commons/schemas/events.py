@@ -3,10 +3,10 @@
 The four schemas in this module correspond to the data flow in
 ``docs/design.md`` section 6:
 
-* :class:`IsolateDiscovered` — Growlithe → ``kanto.discovered`` stream.
+* :class:`IsolateDiscovered` — Growlithe → ``kanto.discovered`` event hub.
 * :class:`ProteinsReady`     — Snorlax → Ditto Modal function call.
-* :class:`EmbeddingsReady`   — Ditto    → ``kanto.embedded`` stream.
-* :class:`IsolateScored`     — Alakazam → ``kanto.scored`` stream.
+* :class:`EmbeddingsReady`   — Ditto    → ``kanto.embedded`` event hub.
+* :class:`IsolateScored`     — Alakazam → ``kanto.scored`` event hub.
 
 ``ProteinsReady`` is **not** a stream event in v1 — Snorlax invokes
 Modal's Ditto function directly with this payload. It still lives in
@@ -63,8 +63,8 @@ _OSKey = Annotated[
         strip_whitespace=True,
         min_length=1,
         max_length=1024,
-        # OCI Object Storage keys can contain almost any character; we
-        # forbid leading/trailing whitespace via ``strip_whitespace`` and
+        # Azure Blob names can contain almost any character; we forbid
+        # leading/trailing whitespace via ``strip_whitespace`` and
         # disallow control bytes via the explicit reject in the validator.
     ),
 ]
@@ -87,8 +87,8 @@ def _utcnow() -> datetime:
 class Transport(StrEnum):
     """Where a schema travels.
 
-    ``STREAM`` events go through OCI Streaming; ``MODAL`` payloads are
-    passed as Modal function arguments.
+    ``STREAM`` events go through Azure Event Hubs (Kafka API);
+    ``MODAL`` payloads are passed as Modal function arguments.
     """
 
     STREAM = "stream"
@@ -150,9 +150,8 @@ class _KantoSchemaBase(BaseModel):
 class IsolateDiscovered(_KantoSchemaBase):
     """A new isolate has appeared in an upstream data source.
 
-    Emitted by Growlithe to the ``kanto.discovered`` OCI Streaming
-    stream. Snorlax consumes this and downloads the FASTA from
-    ``ftp_path``.
+    Emitted by Growlithe to the ``kanto.discovered`` Event Hubs topic.
+    Snorlax consumes this and downloads the FASTA from ``ftp_path``.
     """
 
     SCHEMA_VERSION: ClassVar[int] = 1
@@ -191,7 +190,11 @@ class IsolateDiscovered(_KantoSchemaBase):
     )
     metadata: dict[str, str] = Field(
         default_factory=dict,
-        description="Source-specific extra fields. Keep small (< 1 KB).",
+        description=(
+            "Source-specific extra fields. Keep small (< 1 KB). Adapters "
+            "should put their snapshot identifier (e.g. NCBI PDG version) "
+            "in here rather than minting a new top-level field."
+        ),
     )
 
 
@@ -201,7 +204,7 @@ class IsolateDiscovered(_KantoSchemaBase):
 
 
 class ProteinsReady(_KantoSchemaBase):
-    """The protein FASTA for an isolate is on Object Storage.
+    """The protein FASTA for an isolate is on Azure Blob Storage.
 
     Snorlax invokes Modal's Ditto function with this payload as the
     structured argument. It is **not** a stream event in v1; we keep the
@@ -217,7 +220,7 @@ class ProteinsReady(_KantoSchemaBase):
     version: int = Field(..., ge=1)
     os_key: _OSKey = Field(
         ...,
-        description="Object Storage key under the kanto-proteins bucket.",
+        description="Blob name under the kanto-proteins container.",
     )
     protein_count: int = Field(
         ...,
@@ -254,8 +257,8 @@ class EmbeddingsReady(_KantoSchemaBase):
     )
     os_key: _OSKey = Field(
         ...,
-        description="Object Storage key for the per-protein parquet under "
-        "kanto-embeddings.",
+        description="Blob name for the per-protein parquet under the "
+        "kanto-embeddings container.",
     )
     embedded_at: datetime = Field(default_factory=_utcnow)
 
@@ -309,7 +312,7 @@ class IsolateScored(_KantoSchemaBase):
 
 
 class EventEnvelope(_KantoSchemaBase):
-    """Wrapping envelope written to every OCI Streaming message.
+    """Wrapping envelope written to every Event Hubs message.
 
     The streaming wrapper serializes ``EventEnvelope`` as the message
     body. The envelope identifies which schema lives in ``payload`` so
@@ -354,7 +357,7 @@ class _RegistryEntry(BaseModel):
     transport: Transport
     topic: str | None = Field(
         default=None,
-        description="OCI Streaming topic for STREAM events; None for MODAL payloads.",
+        description="Event Hubs topic for STREAM events; None for MODAL payloads.",
     )
 
 

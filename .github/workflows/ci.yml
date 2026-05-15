@@ -119,6 +119,42 @@ jobs:
         working-directory: libs/kanto-commons
         run: uv run pytest tests/integration/ -m integration -p no:cacheprovider --no-cov
 
+  test-growlithe:
+    name: test (growlithe)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+
+      - name: Sync workspace
+        run: uv sync --all-packages --group dev
+
+      - name: Run unit tests with coverage gate
+        # The growlithe pyproject sets fail_under=80; the gate fails the
+        # job if coverage drops below that. service.py is excluded from
+        # coverage (integration-only glue, exercised by the live smoke
+        # test on the operator's laptop after deployment).
+        working-directory: services/growlithe
+        run: uv run pytest tests/unit/ -p no:cacheprovider --cov=growlithe --cov-report=term-missing
+
+      - name: Run integration tests (testcontainers)
+        # Integration suite uses kanto_commons.testing.mew_pool to spin
+        # up pgvector/pgvector:pg16 via Docker; pulled from Docker Hub.
+        working-directory: services/growlithe
+        run: uv run pytest tests/integration/ -m integration -p no:cacheprovider --no-cov
+
   test-migrations:
     name: test (migrations)
     runs-on: ubuntu-latest

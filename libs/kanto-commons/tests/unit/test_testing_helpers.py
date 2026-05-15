@@ -37,11 +37,11 @@ def test_factories_accept_overrides() -> None:
 
 
 def test_fake_object_storage_implements_protocol() -> None:
-    """The fake matches the OS protocol the wrapper provides."""
+    """The fake matches the ObjectStorage protocol the wrapper provides."""
     fake = FakeObjectStorage()
-    fake.put_bytes(bucket="b", key="k", data=b"x")
-    assert fake.get_bytes(bucket="b", key="k") == b"x"
-    assert fake.exists(bucket="b", key="k")
+    fake.put_bytes(container="c", key="k", data=b"x")
+    assert fake.get_bytes(container="c", key="k") == b"x"
+    assert fake.exists(container="c", key="k")
     assert fake.ping() is True
 
 

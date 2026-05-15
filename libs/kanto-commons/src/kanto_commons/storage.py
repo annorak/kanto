@@ -1,9 +1,10 @@
-"""OCI Object Storage client wrapper.
+"""Azure Blob Storage client wrapper.
 
-Sync API. Object Storage in Kanto is used for one-shot uploads of
-protein FASTAs (Snorlax) and Parquet embedding files (Ditto), and
-for the occasional backfill read by Alakazam — none of these benefit
-from async, and the official OCI SDK is sync-only.
+Sync API. Blob Storage in Kanto is used for one-shot uploads of
+protein FASTAs (Snorlax) and Parquet embedding files (Ditto), the
+metadata-snapshot cache (Growlithe), and the occasional backfill read
+by Alakazam — none of these benefit from async, and the sync
+azure-storage-blob client is well-supported and dependency-light.
 
 Public API
 ----------
@@ -20,15 +21,29 @@ Public API
 
 Plus key helpers under :class:`KeyBuilder`.
 
+Authentication
+--------------
+``ObjectStorageClient.from_settings`` uses
+:class:`azure.identity.DefaultAzureCredential`, which transparently
+picks up:
+
+* AKS Workload Identity in pods (the production path).
+* ``az login`` locally on a developer laptop.
+* Environment-variable credentials in CI.
+
+For tests, construct the wrapper from a connection string via
+``ObjectStorageClient.from_connection_string``, or use
+``FakeObjectStorage`` from :mod:`kanto_commons.testing`.
+
 Retry
 -----
-Transient failures (HTTP 5xx, connection errors) are retried with
-exponential backoff via :mod:`tenacity`. ``ObjectNotFound`` and
+Transient failures (HTTP 5xx, 429, network errors) are retried with
+exponential backoff via :mod:`tenacity`. ``ObjectNotFoundError`` and
 similar deterministic errors are NOT retried — they're surfaced
 immediately.
 
-The wrapper deliberately does NOT leak ``oci.object_storage``
-classes through its API.
+The wrapper deliberately does NOT leak ``azure.storage.blob`` types
+through its API.
 """
 
 from __future__ import annotations
@@ -38,12 +53,17 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import IO, Any, Protocol
 
-from oci.exceptions import ServiceError
-from oci.object_storage import ObjectStorageClient as _OCIObjectStorageClient
-from oci.object_storage.models import CreatePreauthenticatedRequestDetails  # noqa: F401
+from azure.core.credentials import TokenCredential
+from azure.core.exceptions import (
+    HttpResponseError,
+    ResourceExistsError,
+    ResourceNotFoundError,
+)
+from azure.identity import DefaultAzureCredential
+from azure.storage.blob import BlobServiceClient, ContentSettings
 from tenacity import (
     retry,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
@@ -77,22 +97,22 @@ class ObjectAlreadyExistsError(ObjectStorageError):
 
 @dataclass(frozen=True)
 class KeyBuilder:
-    """Canonical OCI Object Storage keys for Kanto artifacts.
+    """Canonical Azure Blob keys for Kanto artifacts.
 
-    The keys live under per-purpose buckets configured on the settings
-    object, so this class only assembles the ``object_name`` portion.
+    The keys live under per-purpose containers configured on the
+    settings object, so this class only assembles the blob name portion.
     """
 
-    proteins_bucket: str
-    embeddings_bucket: str
-    cache_bucket: str
+    proteins_container: str
+    embeddings_container: str
+    metadata_container: str
 
     @classmethod
     def from_settings(cls, settings: ObjectStorageSettings) -> KeyBuilder:
         return cls(
-            proteins_bucket=settings.proteins_bucket,
-            embeddings_bucket=settings.embeddings_bucket,
-            cache_bucket=settings.cache_bucket,
+            proteins_container=settings.proteins_container,
+            embeddings_container=settings.embeddings_container,
+            metadata_container=settings.metadata_container,
         )
 
     @staticmethod
@@ -106,9 +126,23 @@ class KeyBuilder:
         return f"{accession}/{version}.parquet"
 
     @staticmethod
-    def cache_key(name: str) -> str:
-        """``cache/{name}`` — Growlithe metadata cache, etc."""
-        return f"cache/{name}"
+    def metadata_snapshot_key(source: str, organism: str, snapshot_id: str) -> str:
+        """``discovery/{source}/{organism}/{snapshot_id}.tsv.gz``.
+
+        Used by Growlithe to cache the previous metadata snapshot for
+        diffing. ``snapshot_id`` is typically a PDG version string
+        (NCBI) — anything stable per source-organism cycle.
+        """
+        return f"discovery/{source}/{organism}/{snapshot_id}.tsv.gz"
+
+    @staticmethod
+    def metadata_latest_pointer_key(source: str, organism: str) -> str:
+        """``discovery/{source}/{organism}/latest.txt``.
+
+        Points to the snapshot_id most recently cached. Growlithe reads
+        this first to find the previous snapshot for diffing.
+        """
+        return f"discovery/{source}/{organism}/latest.txt"
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +162,7 @@ class ObjectStorage(Protocol):
     def put_bytes(
         self,
         *,
-        bucket: str,
+        container: str,
         key: str,
         data: bytes,
         content_type: str | None = ...,
@@ -139,7 +173,7 @@ class ObjectStorage(Protocol):
     def put_stream(
         self,
         *,
-        bucket: str,
+        container: str,
         key: str,
         stream: IO[bytes],
         content_length: int,
@@ -148,15 +182,15 @@ class ObjectStorage(Protocol):
         if_not_exists: bool = ...,
     ) -> None: ...
 
-    def get_bytes(self, *, bucket: str, key: str) -> bytes: ...
+    def get_bytes(self, *, container: str, key: str) -> bytes: ...
 
     def get_stream(
-        self, *, bucket: str, key: str, chunk_size: int = ...
+        self, *, container: str, key: str, chunk_size: int = ...
     ) -> Iterator[bytes]: ...
 
-    def exists(self, *, bucket: str, key: str) -> bool: ...
+    def exists(self, *, container: str, key: str) -> bool: ...
 
-    def delete(self, *, bucket: str, key: str) -> None: ...
+    def delete(self, *, container: str, key: str) -> None: ...
 
     def ping(self) -> bool: ...
 
@@ -170,17 +204,24 @@ _RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 
 
 def _is_retryable(exc: BaseException) -> bool:
-    if isinstance(exc, ServiceError):
-        return exc.status in _RETRYABLE_STATUSES
+    """Retry network + transient-5xx errors; surface 4xx + own errors.
+
+    ResourceNotFoundError / ResourceExistsError are deterministic and
+    must NOT be retried. ObjectStorageError subclasses originate in
+    this module and are similarly deterministic.
+    """
+    if isinstance(exc, ResourceNotFoundError | ResourceExistsError):
+        return False
     if isinstance(exc, ObjectStorageError):
         return False
-    # Network-level errors (connection reset, DNS hiccups, etc.) bubble
-    # up as generic OSError or oci.exceptions subclasses; retry those.
+    if isinstance(exc, HttpResponseError):
+        status = getattr(exc, "status_code", None)
+        return status in _RETRYABLE_STATUSES
     return isinstance(exc, OSError)
 
 
 _RETRY = retry(
-    retry=retry_if_exception_type((ServiceError, OSError)),
+    retry=retry_if_exception(_is_retryable),
     stop=stop_after_attempt(5),
     wait=wait_exponential(multiplier=0.5, max=10.0),
     reraise=True,
@@ -188,31 +229,52 @@ _RETRY = retry(
 
 
 class ObjectStorageClient:
-    """Concrete OCI Object Storage wrapper.
+    """Concrete Azure Blob Storage wrapper.
 
-    Construct via :meth:`from_oci_config` for production. Tests should
-    use ``FakeObjectStorage`` from :mod:`kanto_commons.testing`.
+    Construct via :meth:`from_settings` for production
+    (DefaultAzureCredential — workload identity in cluster, az login
+    locally) or :meth:`from_connection_string` for local development
+    against Azurite or a real storage account key. Tests should use
+    ``FakeObjectStorage`` from :mod:`kanto_commons.testing`.
     """
 
-    def __init__(
-        self,
-        *,
-        oci_client: _OCIObjectStorageClient,
-        namespace: str,
-    ) -> None:
-        self._client = oci_client
-        self._namespace = namespace
+    def __init__(self, *, blob_service: BlobServiceClient) -> None:
+        self._service = blob_service
 
     @classmethod
-    def from_oci_config(
+    def from_settings(
         cls,
         *,
         settings: ObjectStorageSettings,
-        oci_config: dict[str, Any],
-    ) -> ObjectStorageClient:  # pragma: no cover — real OCI required
-        """Build from a parsed ``~/.oci/config`` dict."""
-        client = _OCIObjectStorageClient(oci_config)
-        return cls(oci_client=client, namespace=settings.namespace)
+        credential: TokenCredential | None = None,
+    ) -> ObjectStorageClient:  # pragma: no cover — real Azure required
+        """Build from settings using workload identity by default.
+
+        ``credential`` defaults to :class:`DefaultAzureCredential`,
+        which discovers AKS workload identity, az-cli login, env-var
+        creds, etc., in order.
+        """
+        cred = credential or DefaultAzureCredential()
+        service = BlobServiceClient(
+            account_url=settings.account_url,
+            credential=cred,
+            max_single_get_size=settings.max_single_get_size,
+            max_single_put_size=settings.max_single_put_size,
+        )
+        return cls(blob_service=service)
+
+    @classmethod
+    def from_connection_string(
+        cls, connection_string: str
+    ) -> ObjectStorageClient:  # pragma: no cover — used by local dev only
+        """Build from a full Azure Storage connection string.
+
+        Suitable for Azurite or for an operator who already exported
+        ``AZURE_STORAGE_CONNECTION_STRING`` for a one-off task. Not
+        used in cluster — workload identity is the production path.
+        """
+        service = BlobServiceClient.from_connection_string(connection_string)
+        return cls(blob_service=service)
 
     # -------------------- write --------------------
 
@@ -220,33 +282,38 @@ class ObjectStorageClient:
     def put_bytes(
         self,
         *,
-        bucket: str,
+        container: str,
         key: str,
         data: bytes,
         content_type: str | None = None,
         metadata: dict[str, str] | None = None,
         if_not_exists: bool = False,
     ) -> None:
-        if if_not_exists and self.exists(bucket=bucket, key=key):
-            raise ObjectAlreadyExistsError(f"{bucket}/{key}")
-        kwargs: dict[str, Any] = {}
-        if content_type is not None:
-            kwargs["content_type"] = content_type
-        if metadata:
-            kwargs["opc_meta"] = metadata
-        self._client.put_object(
-            namespace_name=self._namespace,
-            bucket_name=bucket,
-            object_name=key,
-            put_object_body=data,
-            **kwargs,
+        blob = self._service.get_blob_client(container=container, blob=key)
+        content_settings = (
+            ContentSettings(content_type=content_type) if content_type else None
         )
+        kwargs: dict[str, Any] = {
+            "overwrite": not if_not_exists,
+        }
+        if content_settings is not None:
+            kwargs["content_settings"] = content_settings
+        if metadata:
+            kwargs["metadata"] = metadata
+        # Azure's native "create if absent" path: If-None-Match=* fails the
+        # request when the blob exists. We translate to our error type.
+        if if_not_exists:
+            kwargs["match_condition"] = None  # explicit; If-None-Match handled below
+        try:
+            blob.upload_blob(data, **kwargs)
+        except ResourceExistsError as exc:
+            raise ObjectAlreadyExistsError(f"{container}/{key}") from exc
 
     @_RETRY
     def put_stream(
         self,
         *,
-        bucket: str,
+        container: str,
         key: str,
         stream: IO[bytes],
         content_length: int,
@@ -254,105 +321,89 @@ class ObjectStorageClient:
         metadata: dict[str, str] | None = None,
         if_not_exists: bool = False,
     ) -> None:
-        if if_not_exists and self.exists(bucket=bucket, key=key):
-            raise ObjectAlreadyExistsError(f"{bucket}/{key}")
-        kwargs: dict[str, Any] = {"content_length": content_length}
-        if content_type is not None:
-            kwargs["content_type"] = content_type
-        if metadata:
-            kwargs["opc_meta"] = metadata
-        self._client.put_object(
-            namespace_name=self._namespace,
-            bucket_name=bucket,
-            object_name=key,
-            put_object_body=stream,
-            **kwargs,
+        blob = self._service.get_blob_client(container=container, blob=key)
+        content_settings = (
+            ContentSettings(content_type=content_type) if content_type else None
         )
+        kwargs: dict[str, Any] = {
+            "overwrite": not if_not_exists,
+            "length": content_length,
+        }
+        if content_settings is not None:
+            kwargs["content_settings"] = content_settings
+        if metadata:
+            kwargs["metadata"] = metadata
+        try:
+            blob.upload_blob(stream, **kwargs)
+        except ResourceExistsError as exc:
+            raise ObjectAlreadyExistsError(f"{container}/{key}") from exc
 
     # -------------------- read --------------------
 
     @_RETRY
-    def get_bytes(self, *, bucket: str, key: str) -> bytes:
+    def get_bytes(self, *, container: str, key: str) -> bytes:
+        blob = self._service.get_blob_client(container=container, blob=key)
         try:
-            response = self._client.get_object(
-                namespace_name=self._namespace,
-                bucket_name=bucket,
-                object_name=key,
-            )
-        except ServiceError as exc:
-            if exc.status == 404:
-                raise ObjectNotFoundError(f"{bucket}/{key}") from exc
-            raise
-        return bytes(response.data.content)
+            downloader = blob.download_blob()
+            return downloader.readall()
+        except ResourceNotFoundError as exc:
+            raise ObjectNotFoundError(f"{container}/{key}") from exc
 
     def get_stream(
-        self, *, bucket: str, key: str, chunk_size: int = 1024 * 1024
+        self, *, container: str, key: str, chunk_size: int = 1024 * 1024
     ) -> Iterator[bytes]:
-        """Stream an object in chunks. Caller must consume the iterator
-        eagerly within the same network connection lifetime.
+        """Stream a blob in chunks.
+
+        Not wrapped with :data:`_RETRY` because the iterator is consumed
+        lazily; a retry decorator on the generator would only retry the
+        creation, not individual chunk fetches. The SDK retries chunk
+        reads internally.
         """
+        blob = self._service.get_blob_client(container=container, blob=key)
         try:
-            response = self._client.get_object(
-                namespace_name=self._namespace,
-                bucket_name=bucket,
-                object_name=key,
-            )
-        except ServiceError as exc:
-            if exc.status == 404:
-                raise ObjectNotFoundError(f"{bucket}/{key}") from exc
-            raise
-        # response.data is a requests Response wrapper; iter_content yields chunks.
-        yield from response.data.iter_content(chunk_size=chunk_size)
+            downloader = blob.download_blob()
+        except ResourceNotFoundError as exc:
+            raise ObjectNotFoundError(f"{container}/{key}") from exc
+        yield from downloader.chunks()
+        # chunk_size is honored by the SDK at downloader-construction time
+        # via max_chunk_get_size on the BlobServiceClient; the parameter is
+        # kept on the API for backwards-compat with the OS-era wrapper.
+        _ = chunk_size
 
     # -------------------- metadata --------------------
 
     @_RETRY
-    def exists(self, *, bucket: str, key: str) -> bool:
+    def exists(self, *, container: str, key: str) -> bool:
+        blob = self._service.get_blob_client(container=container, blob=key)
         try:
-            self._client.head_object(
-                namespace_name=self._namespace,
-                bucket_name=bucket,
-                object_name=key,
-            )
-        except ServiceError as exc:
-            if exc.status == 404:
-                return False
-            raise
-        return True
+            return blob.exists()
+        except ResourceNotFoundError:
+            # Some SDK versions raise instead of returning False.
+            return False
 
     @_RETRY
-    def delete(self, *, bucket: str, key: str) -> None:
+    def delete(self, *, container: str, key: str) -> None:
+        blob = self._service.get_blob_client(container=container, blob=key)
         try:
-            self._client.delete_object(
-                namespace_name=self._namespace,
-                bucket_name=bucket,
-                object_name=key,
-            )
-        except ServiceError as exc:
-            if exc.status == 404:
-                raise ObjectNotFoundError(f"{bucket}/{key}") from exc
-            raise
+            blob.delete_blob()
+        except ResourceNotFoundError as exc:
+            raise ObjectNotFoundError(f"{container}/{key}") from exc
 
     # -------------------- health --------------------
 
     def ping(self) -> bool:
-        """Issue a cheap call to verify the SDK can reach OCI.
+        """Cheap reachability probe for k8s readiness.
 
-        Returns False on any failure rather than raising, so it slots
-        directly into k8s readiness probes that interpret False as
-        "not ready" and True as "ready".
+        Returns True if the service responds (even with an auth error —
+        that's a config bug, not a connectivity one). Returns False on
+        any transport / DNS / TLS failure.
         """
         try:
-            self._client.list_buckets(
-                namespace_name=self._namespace,
-                compartment_id="root",  # any compartment id; we don't care about results
-                limit=1,
-            )
-        except ServiceError as exc:
-            # Auth/perm errors still mean "we can talk to OCI" — they're
-            # configuration bugs, not connectivity. We log and return True.
-            if exc.status in (401, 403):
-                logger.warning("ping: auth error, but OCI is reachable")
+            self._service.get_service_properties()
+        except HttpResponseError as exc:
+            status = getattr(exc, "status_code", None)
+            if status in (401, 403):
+                logger.warning("ping: auth error, but Azure Blob is reachable")
                 return True
             return False
         except Exception:

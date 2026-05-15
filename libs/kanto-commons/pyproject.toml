@@ -12,12 +12,13 @@
 
 [project]
 name = "kanto-commons"
-# Bumped to 0.2.0 alongside Task 3: the testing-fixture pool now
-# registers the pgvector adapter so embedding reads round-trip
-# correctly. Service consumers of ``MewClient.from_settings`` are
-# unaffected (it already wired the adapter); only the
-# ``mew_pool`` test fixture changed.
-version = "0.2.0"
+# Bumped to 0.3.0 alongside Task 5: storage backend migrated from OCI
+# Object Storage to Azure Blob Storage. ObjectStorageSettings, the
+# ObjectStorageClient wrapper, and FakeObjectStorage all use Azure
+# semantics now (``container`` instead of ``bucket``, account URL
+# instead of namespace). No fully-migrated consumer existed yet, so
+# the rename is a clean break rather than a soft deprecation.
+version = "0.3.0"
 description = "Shared schemas, clients, and observability primitives for Kanto services"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -33,14 +34,15 @@ dependencies = [
     "psycopg[binary,pool]>=3.2,<4",
     "pgvector>=0.3.6,<0.4",
 
-    # Streaming (OCI Streaming via Kafka API)
+    # Streaming (Azure Event Hubs via Kafka API)
     "aiokafka>=0.12,<0.13",
 
-    # Object Storage (OCI)
-    # Pinned to a recent stable 2.x release. The OCI SDK adds new services
-    # frequently but the Object Storage and Streaming surfaces we use are
-    # extremely stable, so a tight upper bound is safe.
-    "oci>=2.140,<3",
+    # Object Storage (Azure Blob)
+    # ``azure-storage-blob`` is the sync SDK; ``azure-identity`` provides
+    # DefaultAzureCredential, which transparently picks up AKS Workload
+    # Identity in cluster and ``az login`` on a developer laptop.
+    "azure-storage-blob>=12.20,<13",
+    "azure-identity>=1.18,<2",
 
     # Retry — used by every client wrapper for transient-failure backoff.
     "tenacity>=9.0,<10",
@@ -153,8 +155,8 @@ files = ["src/kanto_commons"]
 # authors to fight mypy errors that originate inside vendor code.
 [[tool.mypy.overrides]]
 module = [
-    "oci.*",
     "aiokafka.*",
+    "azure.*",
     "pgvector.*",
     "testcontainers.*",
 ]

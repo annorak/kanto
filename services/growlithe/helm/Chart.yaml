@@ -1,0 +1,22 @@
+apiVersion: v2
+name: kanto-growlithe
+description: Growlithe — Kanto Discoverer service for NCBI Pathogen Detection.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.30.0-0"
+maintainers:
+  - name: Kanto Platform
+    email: kanto-platform@example.com
+keywords:
+  - kanto
+  - growlithe
+  - discoverer
+  - ncbi
+home: https://github.com/annorak/kanto
+sources:
+  - https://github.com/annorak/kanto
+dependencies:
+  - name: kanto-common
+    version: ">=0.1.0"
+    repository: "file://../../../infrastructure/helm/kanto-common"

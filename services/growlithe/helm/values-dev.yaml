@@ -1,0 +1,76 @@
+# Dev environment overrides. Single replica, debug-friendly logging.
+#
+# Every value below that looks like ``REPLACE_VIA_HELM_SET`` (or the
+# all-zero placeholder UUID / SHA) is a render-time placeholder so
+# ``helm template`` succeeds in CI; the operator MUST override it via
+# ``--set`` at install time. The canonical wiring is:
+#
+#   helm upgrade --install kanto-growlithe services/growlithe/helm \
+#     -f services/growlithe/helm/values-dev.yaml \
+#     --set image.tag=$GIT_SHA \
+#     --set workloadIdentity.clientId=$(tf output -raw aks_workload_identity_client_id) \
+#     --set workloadIdentity.tenantId=$AAD_TENANT_ID \
+#     --set keyVault.tenantId=$AAD_TENANT_ID \
+#     --set keyVault.name=$(tf output -raw key_vault_name) \
+#     --set keyVault.secrets[0].objectName=$(tf output -raw mew_password_secret_name) \
+#     --set keyVault.secrets[1].objectName=$(tf output -raw eventhubs_connection_secret_name) \
+#     --set mew.host=$(tf output -raw mew_host) \
+#     --set objectStorage.accountUrl=$(tf output -raw blob_endpoint) \
+#     --set streaming.bootstrapServers=$(tf output -raw eventhubs_bootstrap)
+
+image:
+  registry: kantodevacr.azurecr.io
+  # All-zero SHA is the obvious "REPLACE_ME" sentinel for image.tag;
+  # the library rejects ``latest`` outright. CI render uses it; real
+  # installs --set the actual Git SHA.
+  tag: "0000000000000000000000000000000000000000"
+
+workloadIdentity:
+  enabled: true
+  clientId: "00000000-0000-0000-0000-000000000000"
+  tenantId: "00000000-0000-0000-0000-000000000000"
+
+keyVault:
+  name: REPLACE_VIA_HELM_SET
+  tenantId: "00000000-0000-0000-0000-000000000000"
+  secrets:
+    - objectName: REPLACE_VIA_HELM_SET
+      alias: mew-password
+      envVar: KANTO_MEW_PASSWORD
+    - objectName: REPLACE_VIA_HELM_SET
+      alias: eventhubs-connection
+      envVar: KANTO_STREAMING_SASL_PASSWORD
+
+mew:
+  host: REPLACE_VIA_HELM_SET
+
+objectStorage:
+  accountUrl: https://REPLACE_VIA_HELM_SET.blob.core.windows.net
+  proteinsContainer: kanto-proteins-dev
+  embeddingsContainer: kanto-embeddings-dev
+  metadataContainer: kanto-metadata-dev
+
+streaming:
+  bootstrapServers: REPLACE_VIA_HELM_SET.servicebus.windows.net:9093
+
+kanto:
+  environment: "dev"
+  logLevel: "INFO"
+  logFormat: "json"
+
+resources:
+  preset: "small"
+
+# Mew private endpoint lives in 10.0.0.0/16 (dev VNet); permit
+# Postgres TCP 5432 to that block. Operator sets the exact CIDR.
+networkPolicy:
+  enabled: true
+  allowToCidrs:
+    - cidr: 10.0.0.0/16
+      ports:
+        - port: 5432
+          protocol: TCP
+
+growlithe:
+  pollIntervalSeconds: 21600
+  pollJitterSeconds: 60

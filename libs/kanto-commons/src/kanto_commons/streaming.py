@@ -1,8 +1,8 @@
-"""OCI Streaming wrapper (Kafka-compatible producer/consumer).
+"""Azure Event Hubs (Kafka API) wrapper — typed producer/consumer.
 
-Async API throughout. We default to ``aiokafka`` because the OCI
-Streaming Kafka endpoint speaks the standard Kafka wire protocol; on
-the consumer side aiokafka's per-partition offsets fit our
+Async API throughout. We default to ``aiokafka`` because the Event
+Hubs Kafka endpoint speaks the standard Kafka wire protocol; on the
+consumer side aiokafka's per-partition offsets fit our
 StatefulSet-pod-per-partition pattern naturally.
 
 Three responsibilities:
