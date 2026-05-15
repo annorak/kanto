@@ -58,6 +58,16 @@ resource "azurerm_postgresql_flexible_server_database" "kanto" {
   charset   = "UTF8"
 }
 
+# Azure Postgres Flexible Server ships the pgvector binaries but the extension
+# is not loadable via `CREATE EXTENSION` until it is added to the server-level
+# `azure.extensions` allow-list. Without this, CREATE EXTENSION returns:
+#   ERROR: extension "vector" is not allow-listed for "azure_pg_admin" users
+resource "azurerm_postgresql_flexible_server_configuration" "azure_extensions" {
+  name      = "azure.extensions"
+  server_id = azurerm_postgresql_flexible_server.this.id
+  value     = "VECTOR"
+}
+
 # Firewall rules — only created when the server is in public-access mode.
 resource "azurerm_postgresql_flexible_server_firewall_rule" "allowed" {
   for_each = var.vnet_integration_enabled ? toset([]) : toset(var.allowed_cidrs)

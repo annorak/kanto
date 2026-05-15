@@ -66,6 +66,11 @@ resource "azurerm_subnet" "mew" {
   virtual_network_name = azurerm_virtual_network.this.name
   address_prefixes     = [local.cidr_mew]
 
+  # Postgres Flexible Server auto-attaches this service endpoint on first
+  # server create (used internally for backup traffic). Declared here so
+  # Terraform owns the value and does not propose to remove it.
+  service_endpoints = ["Microsoft.Storage"]
+
   delegation {
     name = "postgres-flexible-server"
     service_delegation {

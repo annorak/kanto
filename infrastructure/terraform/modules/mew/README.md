@@ -22,10 +22,13 @@ capacity, quota), and `prevent_destroy` would block taint+replace. Data
 protection lives in the automated daily backups + PITR (configurable
 retention 7–35 days).
 
-pgvector is preinstalled in Postgres Flexible Server (PG 14+); no custom
-`azurerm_postgresql_flexible_server_configuration` resource is needed. The
-Task 3 migrations run `CREATE EXTENSION vector;` against the kanto
-database to enable it.
+pgvector binaries ship with Postgres Flexible Server (PG 14+), but the
+extension is not loadable until it is added to the server-level
+`azure.extensions` allow-list. The module configures
+`azure.extensions = "VECTOR"`; without it, `CREATE EXTENSION vector`
+returns "extension not allow-listed for azure_pg_admin users". Task 3
+migrations then run `CREATE EXTENSION vector;` against the kanto
+database.
 
 ## Sizing
 
