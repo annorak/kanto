@@ -28,16 +28,16 @@ output "aks_kubernetes_version" {
 }
 
 output "mew_fqdn" {
-  description = "Postgres Flexible Server FQDN. Routable from inside the VNet."
-  value       = module.mew.fqdn
+  description = "Postgres Flexible Server FQDN. Routable from inside the VNet. Null when deploy_mew is false."
+  value       = length(module.mew) > 0 ? module.mew[0].fqdn : null
 }
 
 output "mew_database" {
-  value = module.mew.database_name
+  value = length(module.mew) > 0 ? module.mew[0].database_name : null
 }
 
 output "mew_admin_username" {
-  value = module.mew.admin_username
+  value = length(module.mew) > 0 ? module.mew[0].admin_username : null
 }
 
 output "mew_password_secret_id" {

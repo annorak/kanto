@@ -22,10 +22,37 @@ mew_storage_gb                = 32
 mew_high_availability_enabled = false
 mew_backup_retention_days     = 7
 
-# AKS sizing — small in dev. Standard_B2s = 2 vCPU / 4 GB, ~$30/mo each.
-aks_kubernetes_version = "1.31"
+# AKS sizing. 1.34 is the current non-LTS default (1.31 became LTS-only ->
+# premium tier). On PAYG, Standard_B2s in eastus is the cheapest pick
+# (~$30/mo each). On Free Trial subscriptions B-series may be blocked
+# region-by-region; see "Free Trial caveats" in README.md.
+aks_kubernetes_version = "1.34"
 aks_node_vm_size       = "Standard_B2s"
 aks_node_count         = 2
+
+# ---- Free Trial caveats (uncomment when the subscription blocks the
+#      defaults above). See README.md "Free Trial caveats" for context.
+#
+# AKS compute moves to a region where the chosen VM SKU is allowed.
+# A second VNet is provisioned in that region for AKS nodes/pods + Mew.
+# aks_region    = "eastus2"
+# aks_vnet_cidr = "10.21.0.0/16"
+# aks_node_vm_size = "Standard_D2s_v3"  # B-series often blocked on Free Trial
+# aks_node_count   = 1                  # ~$70/mo, ~2.8 months on $200 credit
+#
+# Mew deferred when Postgres Flex is offer-restricted in every reachable
+# region. The KV password secret stays; bring Mew back later by flipping
+# deploy_mew = true and re-applying.
+# deploy_mew = false
+#
+# Mew name suffix bypasses the Azure DNS reservation from a failed prior
+# `kanto-dev-mew` create (~24-72h to clear naturally).
+# mew_name_suffix = "-e2"
+#
+# Mew public access (when VNet integration unavailable cross-region):
+# mew_vnet_integration_enabled = false
+# mew_allowed_cidrs            = ["203.0.113.10/32"]
+# mew_allow_azure_services     = true
 
 # Modal federation is off in dev (the iam module only creates the federated
 # credential when modal_oidc_issuer is non-empty).

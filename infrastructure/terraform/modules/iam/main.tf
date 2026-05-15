@@ -72,6 +72,25 @@ resource "azurerm_role_assignment" "aks_eh_receiver" {
 }
 
 # -----------------------------------------------------------------------------
+# Operator — Storage Blob Data Contributor on every data container.
+# Subscription-level Owner does not include blob data-plane access; operators
+# need this to run blob diagnostics and one-shot ingestion.
+# -----------------------------------------------------------------------------
+
+resource "azurerm_role_assignment" "operator_blob_contributor" {
+  for_each = {
+    proteins   = var.proteins_container_id
+    embeddings = var.embeddings_container_id
+    metadata   = var.metadata_container_id
+  }
+
+  scope                = each.value
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = var.operator_object_id
+  principal_type       = var.operator_principal_type
+}
+
+# -----------------------------------------------------------------------------
 # Modal — minimum scope per the design doc
 # -----------------------------------------------------------------------------
 

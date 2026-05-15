@@ -216,6 +216,8 @@ override.tf.json
 *.tfvars.json
 !*.tfvars.example
 !*.tfvars.json.example
+infrastructure/terraform/config/*-backend.hcl
+!infrastructure/terraform/config/*-backend.hcl.example
 
 # -----------------------------------------------------------------------------
 # 9. Generic credential-shaped filenames at root or one level deep

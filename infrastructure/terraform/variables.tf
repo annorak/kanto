@@ -55,6 +55,20 @@ variable "operator_cidrs" {
   default     = []
 }
 
+variable "aks_region" {
+  description = "Region override for AKS compute. Defaults to var.region. Use a different region when the project region disallows Free Trial AKS VM SKUs (eastus blocks Standard_B-series on Free Trial; eastus2 works). When set and different from var.region, the network module is instantiated a second time to provide a VNet in that region for AKS nodes/pods + Mew."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "aks_vnet_cidr" {
+  description = "VNet CIDR for the AKS region when aks_region differs from var.region. Must not overlap var.vnet_cidr."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "ssh_public_key" {
   description = "Public SSH key authorized on AKS worker nodes for emergency access."
   type        = string
@@ -85,6 +99,43 @@ variable "mew_backup_retention_days" {
   description = "Flexible Server backup retention. Min 7 / max 35."
   type        = number
   default     = 7
+}
+
+variable "mew_region" {
+  description = "Region override for Mew. Defaults to var.region. Use a different region when the project region disallows Free Trial Postgres provisioning (eastus is restricted; eastus2 / westus2 typically work)."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "mew_vnet_integration_enabled" {
+  description = "Use a delegated subnet + private DNS zone for Mew. Set false in dev when mew_region differs from var.region (VNet integration requires same-region)."
+  type        = bool
+  default     = true
+}
+
+variable "mew_allowed_cidrs" {
+  description = "CIDRs allowed through the Postgres firewall when vnet integration is off. Operator IPs at minimum."
+  type        = list(string)
+  default     = []
+}
+
+variable "mew_allow_azure_services" {
+  description = "Enable the AllowAllAzureServices firewall rule when vnet integration is off. Lets AKS pods reach Mew without wiring AKS egress IPs."
+  type        = bool
+  default     = false
+}
+
+variable "mew_name_suffix" {
+  description = "Optional suffix on the Mew server name. Use to bypass the Azure DNS reservation that persists for ~24-72h after a failed create attempt (`kanto-dev-mew` taken in eastus -> rename to `kanto-dev-mew-e2`)."
+  type        = string
+  default     = ""
+}
+
+variable "deploy_mew" {
+  description = "Skip Mew provisioning when false. Use when the subscription is restricted from creating Postgres Flexible Server in any reachable region (Free Trial offer restriction). Mew-dependent outputs become null; KV mew_password secret is kept so Mew can be provisioned later without rotating credentials."
+  type        = bool
+  default     = true
 }
 
 # -----------------------------------------------------------------------------

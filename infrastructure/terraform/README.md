@@ -156,24 +156,40 @@ In prod, do not destroy. If you need to retire prod, take a final backup
 of Mew + the kanto-embeddings container first; `prevent_destroy` makes
 this delay unavoidable.
 
+## Free Trial caveats
+
+Microsoft Free Trial subscriptions ($200 credit) restrict service availability
+by region. Hit during the first dev apply on this project; the workarounds
+are wired in as optional variables:
+
+| Symptom (from `terraform apply` error) | Cause | Fix |
+| -------------------------------------- | ----- | --- |
+| `BadRequest: The VM size of Standard_B2s is not allowed in your subscription in location 'eastus'` | B-series compute blocked in popular regions on Free Trial | Set `aks_region` + `aks_vnet_cidr` to a region that allows the chosen `aks_node_vm_size`. eastus2 allows D-series. The network module is instantiated a second time in that region for AKS nodes/pods + Mew. |
+| `LocationIsOfferRestricted` on Postgres Flexible Server | Postgres Flex disallowed across all popular US regions on Free Trial | File `aka.ms/postgres-request-quota-increase` for an exemption, OR set `deploy_mew = false` to skip the module. KV `mew_password` secret stays — flip back to true and re-apply when the exemption clears. |
+| `ConflictingPublicNetworkAccessAndVirtualNetworkConfiguration` on Mew | VNet integration requires public access off | Already wired correctly. Only surfaces if you re-enable a deprecated path. |
+| `K8sVersionNotSupported ... only available for Long-Term Support` | A minor version became LTS-only (premium tier) | Pick a non-LTS version. `az aks get-versions --location <region>` lists current options. |
+| KV firewall `403 ForbiddenByFirewall` | `operator_cidrs` doesn't match current public IP | Update `operator_cidrs` to current IP (`curl -s https://api.ipify.org`). |
+| `409 InvalidResourceLocation: 'kanto-dev-mew' already exists in 'eastus'` | Postgres reserves the server name globally for ~24-72h after a failed create | Set `mew_name_suffix = "-e2"` (or any suffix). Reservation clears on its own. |
+
 ## Cost expectations
 
 Rough monthly spend per environment, in eastus, May 2026 list prices.
 12-month Azure free tier credits apply for the first year on some lines.
 
-| Component                                   | Dev (within free tier)     | Prod        |
-| ------------------------------------------- | -------------------------- | ----------- |
-| AKS control plane                           | $0                         | $0          |
-| AKS worker nodes (2× Standard_B2s)          | ~$60                       | n/a         |
-| AKS worker nodes (3× Standard_D4s_v5)       | n/a                        | ~$420       |
-| Mew Flexible Server (B_Standard_B1ms)       | $0 (first 12 mo) / ~$15    | n/a         |
-| Mew Flexible Server (GP_Standard_D16s_v3)   | n/a                        | ~$1,100     |
-| Mew storage (32 GB dev / 256 GB prod)       | $0 (first 12 mo) / ~$4     | ~$32        |
-| Event Hubs Standard (1 TU, auto-inflate 2)  | ~$22                       | ~$44        |
-| Storage Account (LRS, < 5 GB dev)           | $0 (first 12 mo) / ~$1     | ~$50–250    |
-| Key Vault Standard                          | ~$5                        | ~$5         |
-| Log Analytics ingestion (< 5 GB free / mo)  | $0                         | ~$20        |
-| **Estimated total**                         | **~$90/mo (~$0 first 12 mo)** | **~$1,700+** |
+| Component                                   | Dev (PAYG)                 | Dev (Free Trial fallback)  | Prod        |
+| ------------------------------------------- | -------------------------- | -------------------------- | ----------- |
+| AKS control plane                           | $0                         | $0                         | $0          |
+| AKS worker nodes (2× Standard_B2s)          | ~$60                       | n/a (B-series blocked)     | n/a         |
+| AKS worker nodes (1× Standard_D2s_v3)       | n/a                        | ~$70                       | n/a         |
+| AKS worker nodes (3× Standard_D4s_v5)       | n/a                        | n/a                        | ~$420       |
+| Mew Flexible Server (B_Standard_B1ms)       | $0 (first 12 mo) / ~$15    | n/a (offer-restricted)     | n/a         |
+| Mew Flexible Server (GP_Standard_D16s_v3)   | n/a                        | n/a                        | ~$1,100     |
+| Mew storage (32 GB dev / 256 GB prod)       | $0 (first 12 mo) / ~$4     | n/a                        | ~$32        |
+| Event Hubs Standard (1 TU, auto-inflate 2)  | ~$22                       | ~$22                       | ~$44        |
+| Storage Account (LRS, < 5 GB dev)           | $0 (first 12 mo) / ~$1     | $0 (first 12 mo)           | ~$50–250    |
+| Key Vault Standard                          | ~$5                        | ~$5                        | ~$5         |
+| Log Analytics ingestion (< 5 GB free / mo)  | $0                         | $0                         | ~$20        |
+| **Estimated total**                         | **~$90/mo (~$0 first 12 mo)** | **~$97/mo (Mew deferred)** | **~$1,700+** |
 
 Storage egress + ingestion grow with backfill volume.
 

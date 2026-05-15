@@ -43,6 +43,17 @@ variable "event_hubs_embedded_id" {
   type        = string
 }
 
+variable "operator_object_id" {
+  description = "Object ID of the principal running Terraform. Granted Storage Blob Data Contributor on the data containers so the operator can run blob round-trip diagnostics and one-shot ingestion. Subscription-level Owner does not cover blob data-plane operations."
+  type        = string
+}
+
+variable "operator_principal_type" {
+  description = "Principal type of the operator. `User` for `az login` sessions (including Microsoft-account guests); `ServicePrincipal` for CI."
+  type        = string
+  default     = "User"
+}
+
 variable "modal_oidc_issuer" {
   description = "Modal's OIDC issuer URL. Empty string disables federation (dev). When non-empty, the modal federated credential is created."
   type        = string

@@ -1,10 +1,20 @@
 # mew module
 
 Azure Database for PostgreSQL Flexible Server ("Mew") with pgvector
-enabled. VNet-integrated via subnet delegation + private DNS zone — no
-public endpoint, no IP allowlist. Modal reaches Mew via workload-identity
-federation and AAD-issued Postgres connection tokens (no long-lived
-credentials).
+enabled. Two networking modes, switched by `vnet_integration_enabled`:
+
+- **VNet-integrated** (default, prod): delegated subnet + private DNS zone,
+  no public endpoint, no IP allowlist. Modal reaches Mew via workload-
+  identity federation and AAD-issued Postgres connection tokens (no
+  long-lived credentials).
+- **Public-access** (dev fallback): the server exposes a public endpoint;
+  `allowed_cidrs` populates firewall rules and `allow_azure_services = true`
+  adds the `AllowAllAzureServices` special rule so cross-region AKS pods
+  can connect. TLS + auth still required. Used when the chosen region
+  disallows VNet-integrated Free Trial provisioning.
+
+`name_suffix` lets you bypass the global Azure DNS reservation that lingers
+~24-72h after a failed create attempt under the same server name.
 
 The module creates the Flexible Server plus the `kanto` logical database.
 **No `prevent_destroy`** on the server — initial create can fail (region
@@ -32,9 +42,11 @@ optimised) before going to production.
 
 ## Inputs
 
-See `variables.tf`. Required: `resource_group_name`, `region`,
-`name_prefix`, `subnet_id`, `private_dns_zone_id`, `admin_password`,
-`admin_password_secret_id`, `sku_name`.
+See `variables.tf`. Required in every mode: `resource_group_name`,
+`region`, `name_prefix`, `admin_password`, `sku_name`. When
+`vnet_integration_enabled = true` (default): `subnet_id`,
+`private_dns_zone_id`. When `false`: `allowed_cidrs` (typically the
+operator IP) and optionally `allow_azure_services` for cross-region AKS.
 
 ## Outputs
 

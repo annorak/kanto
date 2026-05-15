@@ -39,6 +39,16 @@ resource "azurerm_subnet" "pods" {
   resource_group_name  = var.resource_group_name
   virtual_network_name = azurerm_virtual_network.this.name
   address_prefixes     = [local.cidr_pods]
+
+  # AKS attaches this delegation automatically on first cluster create.
+  # Declared here so Terraform owns the value and does not propose to remove it.
+  delegation {
+    name = "aks-delegation"
+    service_delegation {
+      name    = "Microsoft.ContainerService/managedClusters"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/join/action"]
+    }
+  }
 }
 
 resource "azurerm_subnet" "lb" {

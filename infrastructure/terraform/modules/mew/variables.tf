@@ -13,14 +13,42 @@ variable "name_prefix" {
   type        = string
 }
 
-variable "subnet_id" {
-  description = "Delegated subnet for VNet-integrated Flexible Server."
+variable "name_suffix" {
+  description = "Optional suffix on the server name. Used to bypass Azure DNS reservations from a prior failed create attempt."
   type        = string
+  default     = ""
+}
+
+variable "vnet_integration_enabled" {
+  description = "Use a delegated subnet + private DNS zone (private endpoint only). When false, the server exposes a public endpoint guarded by firewall rules (see allowed_cidrs)."
+  type        = bool
+  default     = true
+}
+
+variable "subnet_id" {
+  description = "Delegated subnet for VNet-integrated Flexible Server. Required when vnet_integration_enabled = true; ignored otherwise."
+  type        = string
+  default     = null
+  nullable    = true
 }
 
 variable "private_dns_zone_id" {
-  description = "Private DNS zone the server registers in (postgres.database.azure.com pattern)."
+  description = "Private DNS zone the server registers in (postgres.database.azure.com pattern). Required when vnet_integration_enabled = true; ignored otherwise."
   type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "allowed_cidrs" {
+  description = "CIDRs allowed through the Postgres firewall when vnet_integration_enabled = false. /32 entries become single-IP rules; broader CIDRs are expanded to first/last host."
+  type        = list(string)
+  default     = []
+}
+
+variable "allow_azure_services" {
+  description = "When true (and vnet_integration_enabled = false), adds the AllowAllAzureServices firewall rule so resources in any Azure subscription can reach the server. Auth is still required. Useful when AKS egress IPs are dynamic."
+  type        = bool
+  default     = false
 }
 
 variable "admin_username" {
