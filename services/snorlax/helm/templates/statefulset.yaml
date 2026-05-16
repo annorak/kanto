@@ -1,0 +1,118 @@
+{{/*
+StatefulSet: one pod per stream partition × 2 replicas for fault
+tolerance. The replicas are active-passive: the OCI Streaming
+consumer group rebalancer hands a partition to the surviving replica
+when the active pod dies. Parallel pod management because the order
+of starts doesn't matter — every pod is interchangeable inside the
+consumer group.
+
+Genome scratch space lives on a tmpfs emptyDir so a pod death (or
+SIGTERM) frees the bytes immediately; persistence isn't useful since
+on restart we replay from the stream anyway.
+*/}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "kanto-common.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kanto-common.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "kanto-common.fullname" . }}-headless
+  replicas: {{ include "kanto-snorlax.replicaCount" . }}
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 0
+  selector:
+    matchLabels:
+      {{- include "kanto-common.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kanto-common.podLabels" . | nindent 8 }}
+      annotations:
+        {{- include "kanto-common.podAnnotations" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "kanto-common.serviceAccountName" . }}
+      terminationGracePeriodSeconds: 600
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      # Soft anti-affinity: prefer the two replicas of a partition on
+      # different nodes so a node failure doesn't take out both. Soft
+      # rather than hard because in dev clusters with few nodes a
+      # hard rule would block scheduling entirely.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    {{- include "kanto-common.selectorLabels" . | nindent 20 }}
+        {{- with .Values.pod.affinity }}
+        {{- /* Operator-supplied affinity merges on top of the soft anti-affinity above. */ -}}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.pod.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.pod.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.pod.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        # tmpfs scratch for in-flight genomes. Sized at 1 GiB which
+        # comfortably holds a bacterial genome plus Prodigal output;
+        # bump if you start ingesting larger organisms.
+        - name: snorlax-work
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+        {{- with (include "kanto-common.secretsVolume" .) }}
+        {{- . | nindent 8 }}
+        {{- end }}
+      containers:
+        - name: {{ include "kanto-common.name" . }}
+          image: {{ include "kanto-common.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.service.metricsPort }}
+              protocol: TCP
+            - name: health
+              containerPort: {{ .Values.probes.port }}
+              protocol: TCP
+          env:
+            {{- include "kanto-common.standardEnv" . | nindent 12 }}
+            {{- include "kanto-snorlax.serviceEnv" . | nindent 12 }}
+          livenessProbe:
+            {{- include "kanto-common.livenessProbe" . | nindent 12 }}
+          readinessProbe:
+            {{- include "kanto-common.readinessProbe" . | nindent 12 }}
+          resources:
+            {{- include "kanto-common.resources" . | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: snorlax-work
+              mountPath: {{ .Values.snorlax.workDir }}
+            {{- with (include "kanto-common.secretsVolumeMount" .) }}
+            {{- . | nindent 12 }}
+            {{- end }}

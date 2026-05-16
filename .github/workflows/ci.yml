@@ -155,6 +155,63 @@ jobs:
         working-directory: services/growlithe
         run: uv run pytest tests/integration/ -m integration -p no:cacheprovider --no-cov
 
+  test-snorlax:
+    name: test (snorlax)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+
+      - name: Sync workspace
+        run: uv sync --all-packages --group dev
+
+      - name: Install Prodigal
+        # Prodigal 2.6.3 is the version baked into the Snorlax container
+        # image; the real-Prodigal sanity test and the kanto-snorlax
+        # smoke-test path both invoke ``prodigal`` from $PATH so the
+        # runner needs the binary too. Bioconda ships the canonical
+        # build, but here we just apt-install since Ubuntu's package
+        # tracks 2.6.3 exactly.
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends prodigal
+          prodigal -v
+
+      - name: Run unit tests with coverage gate
+        # Snorlax pyproject sets fail_under=80; the gate fails the job
+        # if coverage drops below that. service.py is excluded — the
+        # signal-handler / aiohttp-server wiring is exercised end-to-end
+        # by the live smoke test, not by isolated unit tests.
+        working-directory: services/snorlax
+        run: uv run pytest tests/unit/ -p no:cacheprovider --cov=snorlax --cov-report=term-missing
+
+      - name: Run integration tests (testcontainers)
+        # Integration suite uses kanto_commons.testing.mew_pool to spin
+        # up pgvector/pgvector:pg16 via Docker; pulled from Docker Hub.
+        working-directory: services/snorlax
+        run: uv run pytest tests/integration/ -m integration -p no:cacheprovider --no-cov
+
+      - name: Run real-NCBI smoke test
+        # Hits ftp.ncbi.nlm.nih.gov over HTTPS and runs Prodigal on the
+        # downloaded genome. The Modal portion is mocked until Task 7
+        # ships Ditto; this still validates download + Prodigal + OS
+        # upload end-to-end against the live source.
+        working-directory: services/snorlax
+        run: uv run pytest tests/integration/test_real_ncbi_smoke.py -m real_ncbi -p no:cacheprovider --no-cov
+
   test-migrations:
     name: test (migrations)
     runs-on: ubuntu-latest

@@ -1,0 +1,1 @@
+e9206c2ef61ac017b4db86da4dd50438  ./GCA_000123456.1_KantoTestAssembly_genomic.fna.gz

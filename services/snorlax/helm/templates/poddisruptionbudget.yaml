@@ -1,0 +1,21 @@
+{{- if .Values.pdb.enabled }}
+{{/*
+Keep at least one replica per partition running through voluntary
+disruptions (node drain, cluster upgrade). With minAvailable=50%
+and 2 replicas/partition, exactly one replica can be evicted at a
+time, which is what we want for active-passive failover to land
+cleanly.
+*/}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "kanto-common.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kanto-common.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "kanto-common.selectorLabels" . | nindent 6 }}
+{{- end }}

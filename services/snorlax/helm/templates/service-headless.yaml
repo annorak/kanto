@@ -1,0 +1,27 @@
+{{/*
+Headless service required by every StatefulSet for stable pod DNS.
+We don't actually depend on the per-pod DNS names — pods are
+interchangeable inside the consumer group — but Kubernetes still
+requires the field to be set.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kanto-common.fullname" . }}-headless
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kanto-common.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    {{- include "kanto-common.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ .Values.service.metricsPort }}
+      targetPort: metrics
+      protocol: TCP
+    - name: health
+      port: {{ .Values.probes.port }}
+      targetPort: health
+      protocol: TCP

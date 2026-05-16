@@ -1,0 +1,181 @@
+suite: kanto-snorlax rendering
+templates:
+  - templates/statefulset.yaml
+  - templates/service.yaml
+  - templates/service-headless.yaml
+  - templates/serviceaccount.yaml
+  - templates/networkpolicy.yaml
+  - templates/secretproviderclass.yaml
+  - templates/poddisruptionbudget.yaml
+
+release:
+  name: kanto-snorlax
+  namespace: kanto-snorlax
+
+values:
+  - test-values.yaml
+
+tests:
+  - it: replica count is partitions × replicas-per-partition
+    template: templates/statefulset.yaml
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: spec.replicas
+          value: 6        # 3 partitions × 2 replicas
+      - equal:
+          path: spec.podManagementPolicy
+          value: Parallel
+
+  - it: replica count scales when partition count changes
+    template: templates/statefulset.yaml
+    set:
+      snorlax.partitionCount: 8
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 16       # 8 × 2
+
+  - it: pod uses tmpfs scratch dir mounted at the configured workDir
+    template: templates/statefulset.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: snorlax-work
+            emptyDir:
+              medium: Memory
+              sizeLimit: 1Gi
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: snorlax-work
+            mountPath: /var/snorlax/work
+
+  - it: KANTO_SNORLAX_* env vars are wired on top of standardEnv
+    template: templates/statefulset.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KANTO_SNORLAX_CONSUMER_GROUP
+            value: "snorlax"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KANTO_SNORLAX_PRODIGAL_MODE
+            value: "single"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KANTO_SNORLAX_MODAL_ENABLED
+            value: "false"
+
+  - it: POD_NAME drives the consumer id via fieldRef
+    template: templates/statefulset.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KANTO_SNORLAX_CONSUMER_ID
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+
+  - it: Mew password is wired from the synced K8s Secret
+    template: templates/statefulset.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KANTO_MEW_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: kanto-snorlax-akv
+                key: KANTO_MEW_PASSWORD
+
+  - it: Modal token env vars are wired from the synced K8s Secret
+    template: templates/statefulset.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MODAL_TOKEN_ID
+            valueFrom:
+              secretKeyRef:
+                name: kanto-snorlax-akv
+                key: MODAL_TOKEN_ID
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MODAL_TOKEN_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: kanto-snorlax-akv
+                key: MODAL_TOKEN_SECRET
+
+  - it: pod runs as non-root with read-only rootfs
+    template: templates/statefulset.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 65532
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+
+  - it: PodDisruptionBudget keeps at least one replica per partition
+    template: templates/poddisruptionbudget.yaml
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+      - equal:
+          path: spec.minAvailable
+          value: 50%
+
+  - it: NetworkPolicy permits Mew egress to the configured CIDR
+    template: templates/networkpolicy.yaml
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            to:
+              - ipBlock:
+                  cidr: 10.0.0.0/16
+            ports:
+              - port: 5432
+                protocol: TCP
+
+  - it: headless service is present and clusterIP None
+    template: templates/service-headless.yaml
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.clusterIP
+          value: None
+
+  - it: SecretProviderClass references the right vault and lists every secret
+    template: templates/secretproviderclass.yaml
+    asserts:
+      - isKind:
+          of: SecretProviderClass
+      - equal:
+          path: spec.parameters.keyvaultName
+          value: kanto-dev-kv-ab12cd
+      - matchRegex:
+          path: spec.parameters.objects
+          pattern: "kanto-dev-mew-password"
+      - matchRegex:
+          path: spec.parameters.objects
+          pattern: "kanto-dev-eventhubs-connection"
+      - matchRegex:
+          path: spec.parameters.objects
+          pattern: "kanto-dev-modal-token-id"
+      - matchRegex:
+          path: spec.parameters.objects
+          pattern: "kanto-dev-modal-token-secret"

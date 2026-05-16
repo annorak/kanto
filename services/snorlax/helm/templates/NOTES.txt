@@ -1,0 +1,13 @@
+Snorlax {{ .Chart.AppVersion }} installed in namespace {{ .Release.Namespace }}.
+
+Replicas: {{ include "kanto-snorlax.replicaCount" . }}
+  ({{ .Values.snorlax.partitionCount }} partitions × {{ .Values.snorlax.replicasPerPartition }} replicas/partition)
+
+To check status:
+  kubectl -n {{ .Release.Namespace }} get statefulset {{ include "kanto-common.fullname" . }}
+  kubectl -n {{ .Release.Namespace }} logs statefulset/{{ include "kanto-common.fullname" . }} --tail=200 -f
+
+Modal integration is {{ if .Values.snorlax.modalEnabled }}ENABLED{{ else }}DISABLED (NoopModalClient){{ end }}.
+{{- if not .Values.snorlax.modalEnabled }}
+  Flip snorlax.modalEnabled=true once the Ditto Modal function is deployed (Task 7).
+{{- end }}

@@ -40,12 +40,16 @@ lint: deps
 	  fi ; \
 	done
 
+# ``basename`` collides for every services/*/helm directory, so we
+# read the canonical chart name out of each Chart.yaml and use that
+# as the rendered file's stem. That keeps each chart's manifests in
+# its own .rendered/<chart-name>-<env>.yaml.
 template: deps
 	@set -e ; \
 	mkdir -p .rendered ; \
 	for d in $(CHARTS_APP) $(SERVICE_CHARTS) ; do \
 	  if [ -f $$d/Chart.yaml ]; then \
-	    name=$$(basename $$d) ; \
+	    name=$$(awk '/^name:/ { print $$2; exit }' $$d/Chart.yaml) ; \
 	    for env in dev prod ; do \
 	      if [ -f $$d/values-$$env.yaml ]; then \
 	        echo "==> template: $$d ($$env)" ; \

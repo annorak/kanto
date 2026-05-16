@@ -1,0 +1,165 @@
+# Defaults shared across environments. Each entry corresponds to a
+# value the kanto-common library templates read; see
+# infrastructure/helm/CONVENTIONS.md for the contract.
+
+image:
+  registry: ""              # ACR FQDN, e.g. kantodevacr.azurecr.io
+  repository: kanto-snorlax
+  tag: ""                   # MUST be a Git SHA in prod. `latest` is rejected.
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+workloadIdentity:
+  enabled: true
+  clientId: ""              # terraform output aks_workload_identity_client_id
+  tenantId: ""              # AAD tenant ID
+
+keyVault:
+  name: ""                  # vault name (NOT URI), e.g. kanto-dev-kv-ab12cd
+  tenantId: ""              # same as workloadIdentity.tenantId
+  secrets:
+    - objectName: ""        # set per-env (e.g. kanto-dev-mew-password)
+      alias: mew-password
+      envVar: KANTO_MEW_PASSWORD
+    - objectName: ""        # set per-env (e.g. kanto-dev-eventhubs-connection)
+      alias: eventhubs-connection
+      envVar: KANTO_STREAMING_SASL_PASSWORD
+    # Modal token. Two halves: token-id is the public bit, token-secret
+    # is the credential. The Modal Python SDK reads both from the
+    # standard MODAL_TOKEN_ID / MODAL_TOKEN_SECRET env vars.
+    - objectName: ""        # set per-env (e.g. kanto-dev-modal-token-id)
+      alias: modal-token-id
+      envVar: MODAL_TOKEN_ID
+    - objectName: ""        # set per-env (e.g. kanto-dev-modal-token-secret)
+      alias: modal-token-secret
+      envVar: MODAL_TOKEN_SECRET
+
+otel:
+  endpoint: "http://otel-collector.observability.svc.cluster.local:4318"
+  sampleRate: 1.0
+  protocol: "http/protobuf"
+
+prometheus:
+  scrape: true
+  port: 9464
+  path: "/metrics"
+
+# Snorlax is CPU-and-memory-heavy in the Prodigal stage. Default
+# "large" preset gives one core request and 1 GiB / 2 GiB memory; bump
+# to xlarge for environments processing big genomes (>10 Mbp).
+resources:
+  preset: "large"
+  overrides: {}
+
+probes:
+  port: 8081
+  liveness:
+    path: "/healthz"
+    initialDelaySeconds: 15
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    path: "/readyz"
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Snorlax has no inbound app traffic. The default policy permits
+# Prometheus scrape; egress goes to NCBI HTTPS, Azure Blob, Event Hubs,
+# Mew, and Modal — all on 443 to the public internet (or RFC1918 for
+# Mew via the private endpoint, see values-{env}.yaml).
+networkPolicy:
+  enabled: true
+  allowFromPods: []
+  allowToPods: []
+  allowToCidrs: []
+
+service:
+  type: ClusterIP
+  port: 8080                # unused — Snorlax has no inbound app traffic
+  metricsPort: 9464
+
+pod:
+  annotations: {}
+  labels: {}
+  # Anti-affinity is set in the StatefulSet template so the two
+  # replicas per partition land on different nodes; further
+  # constraints (zone spread, dedicated node pool) go here.
+  topologySpreadConstraints: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+kanto:
+  environment: "dev"
+  logLevel: "INFO"
+  logFormat: "json"
+
+# Snorlax-specific configuration. See snorlax.config for what each
+# var maps to.
+snorlax:
+  # StatefulSet sizing. ``partitionCount`` is the number of partitions
+  # on kanto.discovered; ``replicasPerPartition`` is 2 (active + hot
+  # standby) for fault tolerance. Total replicas = partitionCount * 2.
+  partitionCount: 4
+  replicasPerPartition: 2
+
+  # Consumer group ID. Two replicas per partition share the same group
+  # so the rebalancer can hand a partition between them on pod death.
+  consumerGroup: "snorlax"
+
+  # NCBI download tuning.
+  ncbiAssemblyBaseUrl: "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/"
+  downloadTimeoutSeconds: 300
+  downloadMaxAttempts: 5
+  downloadChunkBytes: 1048576
+  minGenomeBytes: 204800
+  maxGenomeBytes: 209715200
+
+  # Prodigal.
+  prodigalBinary: "/usr/local/bin/prodigal"
+  prodigalMode: "single"
+  prodigalTimeoutSeconds: 300
+  workDir: "/var/snorlax/work"
+
+  # Modal.
+  modalFunctionRef: "kanto-ditto/embed"
+  modalEnvironment: "main"
+  modalMaxAttempts: 5
+  # Default false so dev environments can deploy before Task 7 ships
+  # the Ditto function. Flip to true via values-prod.yaml.
+  modalEnabled: false
+
+  # Mew retry budget per write.
+  mewMaxAttempts: 5
+
+  runOnce: false
+
+# Object Storage container names. Override per env.
+objectStorage:
+  accountUrl: ""
+  proteinsContainer: "kanto-proteins"
+  embeddingsContainer: "kanto-embeddings"
+  metadataContainer: "kanto-metadata"
+
+# Mew (Azure Postgres Flexible Server) connection details.
+mew:
+  host: ""
+  port: 5432
+  database: "kanto"
+  user: "kanto_admin"
+  sslmode: "verify-full"
+
+# Event Hubs Kafka endpoint.
+streaming:
+  bootstrapServers: ""
+  saslUsername: "$ConnectionString"
+  discoveredTopic: "kanto.discovered"
+
+# Pod disruption budget — at least one replica per partition stays
+# running through a voluntary disruption (cordon/drain, node update).
+pdb:
+  enabled: true
+  minAvailable: "50%"

@@ -1,0 +1,82 @@
+# Dev environment overrides. 4 partitions × 2 replicas = 8 pods. Modal
+# stays disabled until Task 7 ships the Ditto function.
+#
+# Render with:
+#   helm upgrade --install kanto-snorlax services/snorlax/helm \
+#     -f services/snorlax/helm/values-dev.yaml \
+#     --set image.tag=$GIT_SHA \
+#     --set workloadIdentity.clientId=$(tf output -raw aks_workload_identity_client_id) \
+#     --set workloadIdentity.tenantId=$AAD_TENANT_ID \
+#     --set keyVault.tenantId=$AAD_TENANT_ID \
+#     --set keyVault.name=$(tf output -raw key_vault_name) \
+#     --set keyVault.secrets[0].objectName=$(tf output -raw mew_password_secret_name) \
+#     --set keyVault.secrets[1].objectName=$(tf output -raw eventhubs_connection_secret_name) \
+#     --set keyVault.secrets[2].objectName=$(tf output -raw modal_token_id_secret_name) \
+#     --set keyVault.secrets[3].objectName=$(tf output -raw modal_token_secret_secret_name) \
+#     --set mew.host=$(tf output -raw mew_host) \
+#     --set objectStorage.accountUrl=$(tf output -raw blob_endpoint) \
+#     --set streaming.bootstrapServers=$(tf output -raw eventhubs_bootstrap)
+
+image:
+  registry: kantodevacr.azurecr.io
+  tag: "0000000000000000000000000000000000000000"
+
+workloadIdentity:
+  enabled: true
+  clientId: "00000000-0000-0000-0000-000000000000"
+  tenantId: "00000000-0000-0000-0000-000000000000"
+
+keyVault:
+  name: REPLACE_VIA_HELM_SET
+  tenantId: "00000000-0000-0000-0000-000000000000"
+  secrets:
+    - objectName: REPLACE_VIA_HELM_SET
+      alias: mew-password
+      envVar: KANTO_MEW_PASSWORD
+    - objectName: REPLACE_VIA_HELM_SET
+      alias: eventhubs-connection
+      envVar: KANTO_STREAMING_SASL_PASSWORD
+    - objectName: REPLACE_VIA_HELM_SET
+      alias: modal-token-id
+      envVar: MODAL_TOKEN_ID
+    - objectName: REPLACE_VIA_HELM_SET
+      alias: modal-token-secret
+      envVar: MODAL_TOKEN_SECRET
+
+mew:
+  host: REPLACE_VIA_HELM_SET
+
+objectStorage:
+  accountUrl: https://REPLACE_VIA_HELM_SET.blob.core.windows.net
+  proteinsContainer: kanto-proteins-dev
+  embeddingsContainer: kanto-embeddings-dev
+  metadataContainer: kanto-metadata-dev
+
+streaming:
+  bootstrapServers: REPLACE_VIA_HELM_SET.servicebus.windows.net:9093
+
+kanto:
+  environment: "dev"
+  logLevel: "INFO"
+  logFormat: "json"
+
+snorlax:
+  partitionCount: 2
+  replicasPerPartition: 2
+  modalEnabled: false       # flipped to true once Task 7 ships
+
+resources:
+  preset: "medium"          # dev has tighter quotas
+
+# Mew private endpoint lives in 10.0.0.0/16 (dev VNet).
+networkPolicy:
+  enabled: true
+  allowToCidrs:
+    - cidr: 10.0.0.0/16
+      ports:
+        - port: 5432
+          protocol: TCP
+
+pdb:
+  enabled: true
+  minAvailable: "50%"

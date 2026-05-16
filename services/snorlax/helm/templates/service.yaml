@@ -1,0 +1,25 @@
+{{/*
+Snorlax has no inbound application traffic. The only Service we
+render is for Prometheus scrape on the metrics port and for
+``kubectl port-forward``-style debugging of the health endpoint.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kanto-common.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kanto-common.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "kanto-common.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ .Values.service.metricsPort }}
+      targetPort: metrics
+      protocol: TCP
+    - name: health
+      port: {{ .Values.probes.port }}
+      targetPort: health
+      protocol: TCP

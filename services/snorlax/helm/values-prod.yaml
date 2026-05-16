@@ -1,0 +1,84 @@
+# Prod environment overrides. 8 partitions × 2 replicas = 16 pods.
+# Modal enabled — Ditto runs against real GPUs.
+
+image:
+  registry: kantoprodacr.azurecr.io
+  # Set explicitly by CD; chart fails fast if left as the placeholder.
+  tag: "0000000000000000000000000000000000000000"
+
+workloadIdentity:
+  enabled: true
+  clientId: "00000000-0000-0000-0000-000000000000"
+  tenantId: "00000000-0000-0000-0000-000000000000"
+
+keyVault:
+  name: REPLACE_VIA_HELM_SET
+  tenantId: "00000000-0000-0000-0000-000000000000"
+  secrets:
+    - objectName: REPLACE_VIA_HELM_SET
+      alias: mew-password
+      envVar: KANTO_MEW_PASSWORD
+    - objectName: REPLACE_VIA_HELM_SET
+      alias: eventhubs-connection
+      envVar: KANTO_STREAMING_SASL_PASSWORD
+    - objectName: REPLACE_VIA_HELM_SET
+      alias: modal-token-id
+      envVar: MODAL_TOKEN_ID
+    - objectName: REPLACE_VIA_HELM_SET
+      alias: modal-token-secret
+      envVar: MODAL_TOKEN_SECRET
+
+mew:
+  host: REPLACE_VIA_HELM_SET
+  sslmode: verify-full
+
+objectStorage:
+  accountUrl: https://REPLACE_VIA_HELM_SET.blob.core.windows.net
+  proteinsContainer: kanto-proteins-prod
+  embeddingsContainer: kanto-embeddings-prod
+  metadataContainer: kanto-metadata-prod
+
+streaming:
+  bootstrapServers: REPLACE_VIA_HELM_SET.servicebus.windows.net:9093
+
+kanto:
+  environment: "prod"
+  logLevel: "INFO"
+  logFormat: "json"
+
+snorlax:
+  partitionCount: 8
+  replicasPerPartition: 2
+  modalEnabled: true
+  # Prod gets a bigger retry budget — public infrastructure quirks are
+  # less common than they were in 2024, but cheap insurance.
+  downloadMaxAttempts: 8
+  modalMaxAttempts: 8
+
+resources:
+  preset: "large"
+
+networkPolicy:
+  enabled: true
+  allowToCidrs:
+    # Prod Mew private endpoint, scoped to its actual subnet.
+    - cidr: 10.40.0.0/16
+      ports:
+        - port: 5432
+          protocol: TCP
+
+pdb:
+  enabled: true
+  minAvailable: "50%"
+
+# Production prefers different-zone replicas for partition fault
+# tolerance — surviving a zone outage is the explicit DoD on the
+# StatefulSet topology.
+pod:
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: kanto-snorlax
