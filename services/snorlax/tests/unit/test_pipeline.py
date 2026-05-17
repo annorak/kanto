@@ -142,6 +142,38 @@ class FakeMewConnection:
     async def execute(self, sql: str, params: Any | None = None) -> None:
         self.parent.executed.append((sql.strip(), params))
 
+    def cursor(self) -> _FakeMewCursor:
+        # Some kanto_commons repository methods use ``conn.cursor() ... await
+        # cur.execute(...) ... await cur.fetchone()`` for the SQL that needs
+        # RETURNING (e.g. IsolateRepository.update_status -> 0-row detect).
+        # The fake cursor records the same way and synthesises a result row
+        # when the target accession is known to the parent fake.
+        return _FakeMewCursor(self)
+
+
+@dataclass
+class _FakeMewCursor:
+    conn: FakeMewConnection
+    _last_returning_row: tuple[Any, ...] | None = None
+
+    async def __aenter__(self) -> _FakeMewCursor:
+        return self
+
+    async def __aexit__(self, *_args: Any) -> None:
+        return None
+
+    async def execute(self, sql: str, params: Any | None = None) -> None:
+        await self.conn.execute(sql, params)
+        if "RETURNING accession" in sql and isinstance(params, dict):
+            acc = params.get("accession")
+            if acc and acc in self.conn.parent.isolates:
+                self._last_returning_row = (acc,)
+            else:
+                self._last_returning_row = None
+
+    async def fetchone(self) -> tuple[Any, ...] | None:
+        return self._last_returning_row
+
 
 class FakeMewClient:
     """Records SQL executions and tracks status transitions per accession."""

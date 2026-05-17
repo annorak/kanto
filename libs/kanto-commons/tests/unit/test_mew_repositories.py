@@ -100,15 +100,30 @@ async def test_isolate_upsert_passes_all_columns() -> None:
 
 
 async def test_isolate_update_status_only_status_required() -> None:
-    conn, execute = _mock_conn()
+    # The new contract uses RETURNING + fetchone() to detect a missing
+    # row and raise IsolateNotFoundError. _mock_conn defaults fetchone to
+    # the row dict; pass an explicit "row present" stub.
+    conn, _ = _mock_conn(fetchone={"accession": "PDT001"})
     repo = IsolateRepository()
     await repo.update_status(
         conn, accession="PDT001", status=IsolateStatus.PROTEINS_READY
     )
-    sql, params = execute.call_args.args
+    # Inspect the cursor's execute call, not conn.execute.
+    cursor = conn.cursor.return_value.__aenter__.return_value
+    sql, params = cursor.execute.call_args.args
     assert "UPDATE isolates" in sql
+    assert "RETURNING accession" in sql
     assert params["status"] == "PROTEINS_READY"
     assert params["modal_call_id"] is None
+
+
+async def test_isolate_update_status_missing_raises() -> None:
+    conn, _ = _mock_conn(fetchone=None)
+    repo = IsolateRepository()
+    with pytest.raises(IsolateNotFoundError):
+        await repo.update_status(
+            conn, accession="PDT-MISSING", status=IsolateStatus.PROTEINS_READY
+        )
 
 
 async def test_isolate_update_scores_writes_scored_status() -> None:

@@ -150,7 +150,7 @@ each package can override them locally if it needs different rules.
 
 ---
 
-## 8. Pre-commit hooks — non-negotiable
+## 8. Pre-commit hooks
 
 The hooks in `.pre-commit-config.yaml` enforce:
 
@@ -168,10 +168,3 @@ other override flag.
 
 CI re-runs `pre-commit run --all-files`, so a bypass at the local level
 will fail the PR check anyway.
-
----
-
-## 9. When you get stuck
-
-Open a draft PR early. Reviewers can usually unblock you faster than
-solo debugging will.

@@ -80,12 +80,12 @@ manual steps in [`PREREQUISITES.md`](PREREQUISITES.md).
 
 | Component  | Role                                                         | Runs on | Pointer |
 |------------|--------------------------------------------------------------|---------|---------|
-| Growlithe  | Polls NCBI Pathogen Detection FTP, emits new-isolate events  | OKE     | [`services/growlithe/README.md`](services/growlithe/README.md) |
-| Snorlax    | Downloads FASTA, runs Prodigal, hands off to Ditto on Modal  | OKE     | [`services/snorlax/README.md`](services/snorlax/README.md) |
+| Growlithe  | Polls NCBI Pathogen Detection FTP, emits new-isolate events  | AKS     | [`services/growlithe/README.md`](services/growlithe/README.md) |
+| Snorlax    | Downloads FASTA, runs Prodigal, hands off to Ditto on Modal  | AKS     | [`services/snorlax/README.md`](services/snorlax/README.md) |
 | Ditto      | Embeds proteins with ESM C 600M, writes Parquet + Mew rows   | Modal   | [`services/ditto/README.md`](services/ditto/README.md) |
-| Alakazam   | Computes per-genome novelty scores via pgvector k-NN         | OKE     | [`services/alakazam/README.md`](services/alakazam/README.md) |
-| Chatot     | Filters above-threshold isolates and dispatches alerts       | OKE     | [`services/chatot/README.md`](services/chatot/README.md) |
-| Mew        | PostgreSQL 16 + pgvector — metadata, embeddings, alerts      | OCI DB  | schema and migrations under `infrastructure/` |
+| Alakazam   | Computes per-genome novelty scores via pgvector k-NN         | AKS     | [`services/alakazam/README.md`](services/alakazam/README.md) |
+| Chatot     | Filters above-threshold isolates and dispatches alerts       | AKS     | [`services/chatot/README.md`](services/chatot/README.md) |
+| Mew        | PostgreSQL 16 + pgvector — metadata, embeddings, alerts      | Azure DB  | schema and migrations under `infrastructure/` |
 
 ---
 
@@ -102,4 +102,4 @@ manual steps in [`PREREQUISITES.md`](PREREQUISITES.md).
 
 Kanto is currently developed under a proprietary working license while v1
 is being built. A formal open-source decision will be made before any
-external release; until then, redistribution is not authorised.
+external release; until then, redistribution is not authorized.

@@ -119,10 +119,11 @@ class SnorlaxServiceSettings(BaseSettings):
 
     # ---------------- Modal ----------------
     modal_function_ref: str = Field(
-        default="kanto-ditto/embed",
+        default="kanto-ditto/DittoEmbedder/embed",
         description=(
-            "Modal function reference in ``app-name/function-name`` form. "
-            "Snorlax calls ``modal.Function.lookup(...).spawn(...)``."
+            "Modal reference in ``app/Class/method`` form. Ditto is a "
+            "@app.cls deployment, so Snorlax resolves the class via "
+            "modal.Cls.from_name(...)() and then dispatches the method."
         ),
     )
     modal_environment: str = Field(

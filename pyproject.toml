@@ -57,6 +57,7 @@ members = [
     "infrastructure/migrations",
     "services/growlithe",
     "services/snorlax",
+    "services/ditto",
 ]
 exclude = []
 
@@ -138,8 +139,12 @@ disallow_untyped_defs = false
 module = [
     "aiokafka.*",
     "azure.*",
+    "esm.*",
+    "modal.*",
     "pgvector.*",
+    "pyarrow.*",
     "testcontainers.*",
+    "torch.*",
 ]
 ignore_missing_imports = true
 

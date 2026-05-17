@@ -1,9 +1,9 @@
 """Modal SDK wrapper for invoking the Ditto embed function.
 
-Snorlax calls Modal via ``Function.spawn`` (fire-and-forget) rather
-than ``.remote`` (blocking) for the reason in the design doc: Snorlax
-processes events one at a time per partition and we want it to be
-free to handle the next event the moment the GPU work is queued.
+Snorlax calls Modal via ``.spawn`` (fire-and-forget) rather than
+``.remote`` (blocking): Snorlax processes events one at a time per
+partition and we want it free to handle the next event the moment
+the GPU work is queued.
 
 Two implementations live behind the :class:`ModalClient` protocol:
 
@@ -13,29 +13,27 @@ Two implementations live behind the :class:`ModalClient` protocol:
   environment variables the SDK already reads.
 
 * :class:`NoopModalClient` — generates a deterministic fake call ID
-  and logs the payload. Used until Task 7 ships the Ditto function and
-  in any integration test that doesn't want a real Modal account.
+  and logs the payload. Used in dev when Modal is disabled and in
+  integration tests that don't want a real Modal account.
 
-The protocol is intentionally narrow: a single ``spawn`` method that
-takes the structured payload and returns a call ID. Future expansions
-(status polling, cancellation) can live on the same protocol when
-they're needed.
+Function reference format
+-------------------------
+Ditto is deployed as a Modal *class* (``@app.cls``) with one method,
+not a free-standing ``@app.function``. The function-ref is therefore
+three slash-separated parts: ``app_name/class_name/method_name``. The
+SDK call shape is::
 
-Idempotency key
----------------
-Modal deduplicates calls with the same idempotency key for a short
-window (~24 h at the time of writing — verify before relying on the
-exact duration). We pass ``{accession}-{version}`` so a Snorlax retry
-of a successful spawn doesn't kick off a duplicate GPU run.
+    cls = modal.Cls.from_name(app, class_name, environment_name=env)
+    instance = cls()
+    handle = instance.embed.spawn(...)
 
-Trace context
--------------
-The spawn site is wrapped in a tracing span by the pipeline; the
-client itself just inherits the active OTel context. Modal does not
-yet propagate OTel context through to the function execution
-automatically, so the inside of Ditto starts a fresh trace — this is
-acceptable for v1 and is documented as a known limitation in the
-README.
+Idempotency
+-----------
+Modal's public docs do not document a spawn-time idempotency_key
+parameter; Ditto's own pipeline does the dedupe app-side via Mew
+(see ditto/pipeline.py). We compute a stable key and stash it on the
+SpawnedCall return value for traceability, but the dedupe contract
+is Ditto's, not Modal's.
 """
 
 from __future__ import annotations
@@ -114,10 +112,11 @@ class ModalClient(Protocol):
 
 
 def _idempotency_key_for(payload: ProteinsReady) -> str:
-    """Build a Modal idempotency key from the payload.
+    """Stable key for traceability across retries.
 
-    Modal documents a maximum key length around 64 characters; a hex
-    digest comfortably fits and never collides for distinct accessions.
+    Recorded on :class:`SpawnedCall` so logs across retries correlate.
+    Modal does not consume this; the dedupe contract lives in Ditto's
+    pipeline (see ditto/pipeline.py).
     """
     raw = f"{payload.accession}-{payload.version}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
@@ -126,9 +125,8 @@ def _idempotency_key_for(payload: ProteinsReady) -> str:
 class RealModalClient:
     """Concrete Modal SDK wrapper.
 
-    The Modal SDK import is lazy: when ``modal_enabled=False`` (e.g.
-    Task 7 not yet shipped, or running unit tests), the module never
-    needs to be installed.
+    The Modal SDK import is lazy: when ``modal_enabled=False`` the
+    module never needs to be installed.
     """
 
     def __init__(
@@ -140,8 +138,7 @@ class RealModalClient:
     ) -> None:
         self._function_ref = function_ref
         self._environment = environment
-        self._max_attempts = max_attempts
-        self._function = self._lookup_function()
+        self._spawnable = self._lookup_spawnable()
         self._retry = Retrying(
             retry=retry_if_exception_type(_TransientSpawnError),
             stop=stop_after_attempt(max_attempts),
@@ -149,25 +146,22 @@ class RealModalClient:
             reraise=True,
         )
 
-    def _lookup_function(self) -> object:  # pragma: no cover — needs modal SDK
+    def _lookup_spawnable(self) -> object:  # pragma: no cover — needs modal SDK
         try:
-            import modal  # type: ignore[import-not-found]
+            import modal
         except ImportError as exc:
             raise ModalUnavailableError(
-                "modal SDK is not installed — set KANTO_SNORLAX_MODAL_ENABLED=false "
-                "to use the no-op client until the Ditto function ships in Task 7"
+                "modal SDK is not installed — set KANTO_SNORLAX_MODAL_ENABLED=false"
             ) from exc
-        if "/" not in self._function_ref:
+        parts = self._function_ref.split("/")
+        if len(parts) != 3:
             raise ModalUnavailableError(
-                f"function_ref must be 'app/function'; got {self._function_ref!r}"
+                f"function_ref must be 'app/Class/method'; got {self._function_ref!r}"
             )
-        app_name, func_name = self._function_ref.split("/", 1)
+        app_name, cls_name, method_name = parts
         try:
-            return modal.Function.lookup(
-                app_name,
-                func_name,
-                environment_name=self._environment,
-            )
+            cls_handle = modal.Cls.from_name(app_name, cls_name, environment_name=self._environment)
+            return getattr(cls_handle(), method_name)
         except Exception as exc:
             raise ModalUnavailableError(f"failed to resolve {self._function_ref!r}: {exc}") from exc
 
@@ -176,20 +170,17 @@ class RealModalClient:
 
         def _do() -> SpawnedCall:
             try:
-                handle = self._function.spawn(  # type: ignore[attr-defined]
+                handle = self._spawnable.spawn(  # type: ignore[attr-defined]
                     accession=payload.accession,
                     version=payload.version,
                     os_key=payload.os_key,
-                    _idempotency_key=idem,
                 )
             except Exception as exc:
                 raise _TransientSpawnError(str(exc)) from exc
+            # Modal's FunctionCall handle exposes the id as `.object_id`
+            # since 1.0; falling back is paranoia.
             call_id = getattr(handle, "object_id", None) or getattr(handle, "call_id", None)
             if call_id is None:
-                # Modal SDKs across versions expose the id under slightly
-                # different attribute names. If we ever land in a version
-                # where neither is present, fail loud rather than store
-                # ``None`` in Mew and lose the call.
                 raise _TransientSpawnError(
                     f"modal returned a handle without an object_id: {handle!r}"
                 )
@@ -201,10 +192,7 @@ class RealModalClient:
             raise ModalSpawnError(str(exc)) from exc
 
     def healthy(self) -> bool:  # pragma: no cover — needs modal SDK
-        # Resolving the function at init time is the proof of life;
-        # there's nothing cheap to call here on the actual GPU function
-        # without invoking work.
-        return self._function is not None
+        return self._spawnable is not None
 
 
 class _TransientSpawnError(Exception):

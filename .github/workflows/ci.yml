@@ -212,6 +212,48 @@ jobs:
         working-directory: services/snorlax
         run: uv run pytest tests/integration/test_real_ncbi_smoke.py -m real_ncbi -p no:cacheprovider --no-cov
 
+  test-ditto:
+    name: test (ditto)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+
+      - name: Sync workspace
+        # ditto declares torch + esm as optional extras (see
+        # services/ditto/pyproject.toml). Modal builds the image with
+        # those at deploy time; CI exercises pipeline + batching +
+        # aggregate + parquet + cost-monitor with fakes so neither is
+        # needed here.
+        run: uv sync --all-packages --group dev
+
+      - name: Run unit tests with coverage gate
+        # ditto pyproject sets fail_under=75 (lower than other services
+        # because GPU code is integration-tested, not unit-tested).
+        working-directory: services/ditto
+        run: uv run pytest tests/unit/ -p no:cacheprovider --cov=ditto --cov-report=term-missing
+
+      - name: Run synthetic in-process benchmark
+        # Runs the parse + batch + aggregate + parquet path end-to-end
+        # on a synthetic 3,000-protein proteome with a fake embedder.
+        # Asserts the length-grouped batching efficiency target plus
+        # per-stage wall-time bounds, so a regression in any of those
+        # stages fails the job.
+        working-directory: services/ditto
+        run: uv run pytest tests/integration/test_synthetic_benchmark.py -m slow -p no:cacheprovider --no-cov
+
   test-migrations:
     name: test (migrations)
     runs-on: ubuntu-latest

@@ -190,16 +190,21 @@ class IsolateRepository:
                modal_call_id = COALESCE(%(modal_call_id)s, modal_call_id),
                qc_failure_reason = COALESCE(%(qc_failure_reason)s, qc_failure_reason)
          WHERE accession = %(accession)s
+        RETURNING accession
         """
-        await conn.execute(
-            sql,
-            {
-                "status": status.value,
-                "modal_call_id": modal_call_id,
-                "qc_failure_reason": qc_failure_reason,
-                "accession": accession,
-            },
-        )
+        async with conn.cursor() as cur:
+            await cur.execute(
+                sql,
+                {
+                    "status": status.value,
+                    "modal_call_id": modal_call_id,
+                    "qc_failure_reason": qc_failure_reason,
+                    "accession": accession,
+                },
+            )
+            row = await cur.fetchone()
+        if row is None:
+            raise IsolateNotFoundError(accession)
 
     async def update_scores(
         self,
