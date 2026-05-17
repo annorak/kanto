@@ -1,0 +1,77 @@
+{{- if .Values.centroidCronJob.enabled }}
+{{/*
+Daily species-centroid recomputation CronJob.
+
+Why a CronJob and not a sidecar:
+* The job's cost scales with the embedding population, not the
+  consumer's throughput. Running it once a day in its own pod keeps
+  the hot-path consumer's memory and CPU stable.
+* CronJob's history (``successfulJobsHistoryLimit`` /
+  ``failedJobsHistoryLimit``) gives oncall a no-config replay of the
+  last few runs' logs.
+
+``concurrencyPolicy: Forbid`` prevents a stuck run from being lapped
+by the next schedule.
+
+Shares the Alakazam image and ServiceAccount with the consumer so
+workload identity, Mew secrets, and OS access are wired identically.
+*/}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "kanto-common.fullname" . }}-centroids
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kanto-common.labels" . | nindent 4 }}
+    kanto.io/job: species-centroids
+spec:
+  schedule: {{ .Values.centroidCronJob.schedule | quote }}
+  concurrencyPolicy: {{ .Values.centroidCronJob.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.centroidCronJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.centroidCronJob.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.centroidCronJob.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.centroidCronJob.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "kanto-common.podLabels" . | nindent 12 }}
+            kanto.io/job: species-centroids
+          annotations:
+            {{- include "kanto-common.podAnnotations" . | nindent 12 }}
+        spec:
+          serviceAccountName: {{ include "kanto-common.serviceAccountName" . }}
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          {{- with (include "kanto-common.secretsVolume" .) }}
+          volumes:
+            {{- . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: centroids
+              image: {{ include "kanto-common.image" . | quote }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["alakazam-centroids"]
+              env:
+                {{- include "kanto-common.standardEnv" . | nindent 16 }}
+                {{- include "kanto-alakazam.serviceEnv" . | nindent 16 }}
+              resources:
+                {{- include "kanto-alakazam.cronjobResources" . | nindent 16 }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              {{- with (include "kanto-common.secretsVolumeMount" .) }}
+              volumeMounts:
+                {{- . | nindent 16 }}
+              {{- end }}
+{{- end }}

@@ -58,6 +58,7 @@ members = [
     "services/growlithe",
     "services/snorlax",
     "services/ditto",
+    "services/alakazam",
 ]
 exclude = []
 

@@ -1,0 +1,22 @@
+apiVersion: v2
+name: kanto-alakazam
+description: Alakazam — Kanto Scorer (multi-component novelty scoring).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.30.0-0"
+maintainers:
+  - name: Kanto Platform
+    email: kanto-platform@example.com
+keywords:
+  - kanto
+  - alakazam
+  - scorer
+  - novelty-detection
+home: https://github.com/annorak/kanto
+sources:
+  - https://github.com/annorak/kanto
+dependencies:
+  - name: kanto-common
+    version: ">=0.1.0"
+    repository: "file://../../../infrastructure/helm/kanto-common"

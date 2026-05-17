@@ -1,0 +1,25 @@
+{{/*
+Alakazam has no inbound application traffic; the only Service we
+render is for Prometheus scrape on the metrics port and ad-hoc
+debugging of the health endpoint via ``kubectl port-forward``.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kanto-common.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kanto-common.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "kanto-common.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ .Values.service.metricsPort }}
+      targetPort: metrics
+      protocol: TCP
+    - name: health
+      port: {{ .Values.probes.port }}
+      targetPort: health
+      protocol: TCP

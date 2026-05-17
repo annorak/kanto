@@ -1,0 +1,133 @@
+suite: kanto-alakazam rendering
+templates:
+  - templates/deployment.yaml
+  - templates/service.yaml
+  - templates/serviceaccount.yaml
+  - templates/networkpolicy.yaml
+  - templates/secretproviderclass.yaml
+  - templates/centroid-cronjob.yaml
+  - templates/poddisruptionbudget.yaml
+
+release:
+  name: kanto-alakazam
+  namespace: kanto-alakazam
+
+values:
+  - test-values.yaml
+
+tests:
+  - it: Deployment scales to alakazam.replicaCount
+    template: templates/deployment.yaml
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: spec.replicas
+          value: 3
+
+  - it: image reference is composed from registry + repository + sha
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "kantodevacr.azurecr.io/kanto-alakazam:deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+
+  - it: latest tag is rejected by the library
+    template: templates/deployment.yaml
+    set:
+      image.tag: latest
+    asserts:
+      - failedTemplate: {}
+
+  - it: KANTO_ALAKAZAM_* env vars are injected on top of standardEnv
+    template: templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KANTO_ALAKAZAM_CANDIDATE_THRESHOLD
+            value: "0.3"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KANTO_ALAKAZAM_WEIGHT_COVERAGE
+            value: "2"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KANTO_ALAKAZAM_REFERENCE_SET_KEY
+            value: "references/common_proteins_v1.parquet"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KANTO_STREAMING_EMBEDDED_TOPIC
+            value: "kanto.embedded"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KANTO_STREAMING_SCORED_TOPIC
+            value: "kanto.scored"
+
+  - it: pod runs as non-root with read-only rootfs
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+
+  - it: ServiceAccount carries workload-identity annotations
+    template: templates/serviceaccount.yaml
+    asserts:
+      - isKind:
+          of: ServiceAccount
+      - equal:
+          path: metadata.annotations["azure.workload.identity/client-id"]
+          value: 00000000-0000-0000-0000-000000000001
+
+  - it: NetworkPolicy permits Mew egress to the configured CIDR
+    template: templates/networkpolicy.yaml
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            to:
+              - ipBlock:
+                  cidr: 10.0.0.0/16
+            ports:
+              - port: 5432
+                protocol: TCP
+
+  - it: CronJob renders with the alakazam-centroids command
+    template: templates/centroid-cronjob.yaml
+    asserts:
+      - isKind:
+          of: CronJob
+      - equal:
+          path: spec.schedule
+          value: "0 3 * * *"
+      - equal:
+          path: spec.concurrencyPolicy
+          value: Forbid
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].command[0]
+          value: alakazam-centroids
+
+  - it: CronJob is omitted when disabled
+    template: templates/centroid-cronjob.yaml
+    set:
+      centroidCronJob.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: PodDisruptionBudget defaults to 50%
+    template: templates/poddisruptionbudget.yaml
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+      - equal:
+          path: spec.minAvailable
+          value: "50%"

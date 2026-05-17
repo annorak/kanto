@@ -1,0 +1,27 @@
+{{ .Chart.Name }} {{ .Chart.AppVersion }} installed in namespace {{ .Release.Namespace }}.
+
+Image: {{ include "kanto-common.image" . }}
+
+Verify Alakazam is up and consuming kanto.embedded:
+
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/name={{ include "kanto-common.name" . }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "kanto-common.fullname" . }} 8081:{{ .Values.probes.port }}
+  curl http://localhost:8081{{ .Values.probes.readiness.path }}
+
+Tail recent scoring activity (look for "alakazam.pipeline" lines):
+
+  kubectl -n {{ .Release.Namespace }} logs -l app.kubernetes.io/name={{ include "kanto-common.name" . }} --tail=200 -f
+
+{{- if .Values.centroidCronJob.enabled }}
+
+The species-centroid CronJob runs at "{{ .Values.centroidCronJob.schedule }}".
+Trigger an ad-hoc recompute (also handy for first-time bootstrap):
+
+  kubectl -n {{ .Release.Namespace }} create job --from=cronjob/{{ include "kanto-common.fullname" . }}-centroids alakazam-centroids-manual-$(date +%s)
+{{- end }}
+
+Trigger one-shot consume (smoke test; remember to reset afterwards):
+
+  kubectl -n {{ .Release.Namespace }} set env deploy/{{ include "kanto-common.fullname" . }} KANTO_ALAKAZAM_RUN_ONCE=true
+  kubectl -n {{ .Release.Namespace }} rollout restart deploy/{{ include "kanto-common.fullname" . }}
+  kubectl -n {{ .Release.Namespace }} set env deploy/{{ include "kanto-common.fullname" . }} KANTO_ALAKAZAM_RUN_ONCE=false

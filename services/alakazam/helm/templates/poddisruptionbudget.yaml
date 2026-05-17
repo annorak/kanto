@@ -1,0 +1,20 @@
+{{- if .Values.pdb.enabled }}
+{{/*
+Voluntary-disruption guard: a cluster drain shouldn't evict more
+than half the Alakazam pods at once. With ``minAvailable: 50%`` and
+multi-replica deployments, we keep enough consumers to drain the
+partition lag without falling behind on backpressure.
+*/}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "kanto-common.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kanto-common.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "kanto-common.selectorLabels" . | nindent 6 }}
+{{- end }}

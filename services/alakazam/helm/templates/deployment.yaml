@@ -1,0 +1,102 @@
+{{/*
+Scoring consumer. Horizontally scalable: replicas <= partition count
+on kanto.embedded so each pod owns one or more partitions cleanly.
+
+We use a Deployment (not StatefulSet) because Alakazam has no per-pod
+identity — pods are interchangeable inside the consumer group.
+
+We compose the pod spec from kanto-common helpers and inject the
+service env via ``kanto-alakazam.serviceEnv`` so a future change to
+the env contract lands in one place.
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kanto-common.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kanto-common.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.alakazam.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "kanto-common.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kanto-common.podLabels" . | nindent 8 }}
+      annotations:
+        {{- include "kanto-common.podAnnotations" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "kanto-common.serviceAccountName" . }}
+      terminationGracePeriodSeconds: 300
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    {{- include "kanto-common.selectorLabels" . | nindent 20 }}
+        {{- with .Values.pod.affinity }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.pod.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.pod.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.pod.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (include "kanto-common.secretsVolume" .) }}
+      volumes:
+        {{- . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ include "kanto-common.name" . }}
+          image: {{ include "kanto-common.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.service.metricsPort }}
+              protocol: TCP
+            - name: health
+              containerPort: {{ .Values.probes.port }}
+              protocol: TCP
+          env:
+            {{- include "kanto-common.standardEnv" . | nindent 12 }}
+            {{- include "kanto-alakazam.serviceEnv" . | nindent 12 }}
+          livenessProbe:
+            {{- include "kanto-common.livenessProbe" . | nindent 12 }}
+          readinessProbe:
+            {{- include "kanto-common.readinessProbe" . | nindent 12 }}
+          resources:
+            {{- include "kanto-common.resources" . | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          {{- with (include "kanto-common.secretsVolumeMount" .) }}
+          volumeMounts:
+            {{- . | nindent 12 }}
+          {{- end }}

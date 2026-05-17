@@ -107,7 +107,7 @@ async def mew_pool(mew_settings: MewSettings) -> AsyncIterator[AsyncConnectionPo
         async with pool.connection() as conn:
             await conn.execute(
                 "TRUNCATE alerts, genome_embeddings, isolates, "
-                "discovery_cursors RESTART IDENTITY CASCADE"
+                "discovery_cursors, species_centroids RESTART IDENTITY CASCADE"
             )
         yield pool
     finally:
