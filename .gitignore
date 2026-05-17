@@ -267,6 +267,14 @@ models/
 !models/.gitkeep
 weights/
 
+# Small synthetic test fixtures keep their natural extensions so the
+# tests look like they would in production. Allow-list the specific
+# paths that the suite needs; the global excludes above still block
+# real genomic / model data from being committed by accident.
+!**/tests/fixtures/*.fna.gz
+!**/tests/fixtures/*.faa.gz
+!**/tests/fixtures/*.fasta
+
 # -----------------------------------------------------------------------------
 # 12. Helm build artifacts
 # -----------------------------------------------------------------------------

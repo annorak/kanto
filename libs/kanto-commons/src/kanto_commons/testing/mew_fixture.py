@@ -99,10 +99,15 @@ async def mew_pool(mew_settings: MewSettings) -> AsyncIterator[AsyncConnectionPo
     )
     await pool.open()
     try:
-        # Clean state before each test.
+        # Clean state before each test. Include every table the
+        # current migration head defines -- missing one here causes
+        # silent leakage between tests (most visibly: a leftover
+        # discovery_cursors row makes the next test's first poll skip
+        # as "unchanged snapshot").
         async with pool.connection() as conn:
             await conn.execute(
-                "TRUNCATE alerts, genome_embeddings, isolates RESTART IDENTITY CASCADE"
+                "TRUNCATE alerts, genome_embeddings, isolates, "
+                "discovery_cursors RESTART IDENTITY CASCADE"
             )
         yield pool
     finally:

@@ -267,8 +267,17 @@ def test_updated_at_trigger_fires_on_update(applied_db: str) -> None:
 
 
 def test_alembic_version_table_records_head(applied_db: str) -> None:
-    """The dedicated version table must contain the head revision."""
+    """The dedicated version table must contain the current head revision.
+
+    The head is resolved from the alembic ScriptDirectory rather than
+    hard-coded so adding a new migration (e.g. 0002, 0003) does not
+    silently invalidate this assertion.
+    """
+    from alembic.script import ScriptDirectory
+    from kanto_migrations.runner import alembic_config
+
+    expected_head = ScriptDirectory.from_config(alembic_config()).get_current_head()
     with psycopg.connect(applied_db) as conn, conn.cursor() as cur:
         cur.execute("SELECT version_num FROM kanto_alembic_version")
         rows = cur.fetchall()
-    assert rows == [("0001",)]
+    assert rows == [(expected_head,)]
