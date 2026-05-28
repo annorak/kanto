@@ -139,7 +139,9 @@ class EmbedPipeline:
 
         # 1. Idempotency. Re-emit so a Modal retry never silently
         #    drops the downstream event.
-        if self._settings.skip_if_already_embedded and await self._already_embedded(accession):
+        if self._settings.skip_if_already_embedded and await self._already_embedded(
+            accession, version
+        ):
             logger.info(
                 "ditto.pipeline: skip accession=%s version=%d model_version=%s",
                 accession,
@@ -215,15 +217,23 @@ class EmbedPipeline:
     # Helpers
     # ----------------------------------------------------------------
 
-    async def _already_embedded(self, accession: str) -> bool:
-        """True iff Mew has an embedding for ``accession`` at the
-        current model_version. A model bump invalidates the check."""
+    async def _already_embedded(self, accession: str, version: int) -> bool:
+        """True iff Mew has an embedding for ``(accession, version,
+        current model_version)``. Any of those differing means we
+        still need to embed (new isolate version, model upgrade, or
+        first-time isolate). A stored row with version > the event's
+        version is treated as already-embedded because the newer
+        version already supersedes this one in Mew."""
         try:
             async with self._mew.connection() as conn:
                 row = await self._embedding_repo.get(conn, accession=accession)
         except EmbeddingNotFoundError:
             return False
-        return row.model_version == self._settings.model_version
+        if row.model_version != self._settings.model_version:
+            return False
+        # Stored newer or equal => no work to do; stored older => we
+        # have a fresh version to embed.
+        return row.version >= version
 
     def _run_inference(self, parsed: Sequence[ParsedProtein]) -> list[ProteinEmbedding]:
         if not parsed:

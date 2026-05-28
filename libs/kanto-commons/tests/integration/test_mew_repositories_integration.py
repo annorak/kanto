@@ -104,6 +104,75 @@ async def test_isolate_upsert_is_idempotent(
     assert row.version == 2
 
 
+async def test_isolate_upsert_same_version_is_safe_replay(
+    mew_pool: AsyncConnectionPool,
+    isolate_repo: IsolateRepository,
+) -> None:
+    """Duplicate ``(accession, version)`` writes are at-least-once replays;
+    the row ends up in the expected state regardless of how many times we
+    see it."""
+    async with mew_pool.connection() as conn:
+        await isolate_repo.upsert(conn, _make_isolate(version=1, organism="A"))
+        await isolate_repo.upsert(conn, _make_isolate(version=1, organism="B"))
+        row = await isolate_repo.get(conn, "PDT001")
+    assert row.version == 1
+    assert row.organism == "B"
+
+
+async def test_isolate_upsert_stale_older_version_is_dropped(
+    mew_pool: AsyncConnectionPool,
+    isolate_repo: IsolateRepository,
+) -> None:
+    """A late-arriving lower-version event must not overwrite the
+    newer state already in Mew."""
+    async with mew_pool.connection() as conn:
+        await isolate_repo.upsert(
+            conn,
+            _make_isolate(version=2, organism="newer", status=IsolateStatus.SCORED),
+        )
+        await isolate_repo.upsert(
+            conn,
+            _make_isolate(version=1, organism="older", status=IsolateStatus.DISCOVERED),
+        )
+        row = await isolate_repo.get(conn, "PDT001")
+    assert row.version == 2
+    assert row.organism == "newer"
+    assert row.status is IsolateStatus.SCORED
+
+
+async def test_embedding_upsert_stale_older_version_is_dropped(
+    mew_pool: AsyncConnectionPool,
+    isolate_repo: IsolateRepository,
+    embedding_repo: EmbeddingRepository,
+) -> None:
+    async with mew_pool.connection() as conn:
+        await isolate_repo.upsert(conn, _make_isolate())
+        await embedding_repo.upsert(
+            conn,
+            EmbeddingRow(
+                accession="PDT001",
+                version=2,
+                model="m",
+                model_version="2.0",
+                embedding=_vec(0.9),
+            ),
+        )
+        # Stale lower-version write should silently no-op.
+        await embedding_repo.upsert(
+            conn,
+            EmbeddingRow(
+                accession="PDT001",
+                version=1,
+                model="m",
+                model_version="1.0",
+                embedding=_vec(0.1),
+            ),
+        )
+        row = await embedding_repo.get(conn, "PDT001")
+    assert row.version == 2
+    assert row.model_version == "2.0"
+
+
 async def test_isolate_update_status(
     mew_pool: AsyncConnectionPool,
     isolate_repo: IsolateRepository,

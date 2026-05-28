@@ -182,7 +182,7 @@ async def test_send_default_key_is_accession_version(
     prod, fake = producer_pair
     await prod.start()
     await prod.send(make_isolate_scored())
-    assert fake.sent[0].key == b"PDT000123.1:1"
+    assert fake.sent[0].key == b"PDT000123:1"
 
 
 async def test_send_proteins_ready_rejected(

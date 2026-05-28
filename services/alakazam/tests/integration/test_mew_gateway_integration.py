@@ -87,14 +87,14 @@ async def test_get_isolate_and_embedding_round_trip(
     mew_pool: AsyncConnectionPool,
     mew_client: MewClient,
 ) -> None:
-    await _seed_isolate(mew_pool, accession="PDT0001.1", organism="Salmonella")
+    await _seed_isolate(mew_pool, accession="PDT0001", organism="Salmonella")
     gateway = AlakazamMewGateway(mew=mew_client)
-    iso = await gateway.get_isolate("PDT0001.1")
+    iso = await gateway.get_isolate("PDT0001")
     assert iso.organism == "Salmonella"
     assert iso.status is IsolateStatus.EMBEDDED
 
-    emb = await gateway.get_genome_embedding("PDT0001.1")
-    assert emb.accession == "PDT0001.1"
+    emb = await gateway.get_genome_embedding("PDT0001")
+    assert emb.accession == "PDT0001"
     assert len(emb.embedding) == _DIM
 
 
@@ -102,14 +102,14 @@ async def test_k_nearest_excludes_seed(
     mew_pool: AsyncConnectionPool,
     mew_client: MewClient,
 ) -> None:
-    await _seed_isolate(mew_pool, accession="PDT0001.1", organism="Salmonella")
-    await _seed_isolate(mew_pool, accession="PDT0002.1", organism="Salmonella")
-    await _seed_isolate(mew_pool, accession="PDT0003.1", organism="Listeria")
+    await _seed_isolate(mew_pool, accession="PDT0001", organism="Salmonella")
+    await _seed_isolate(mew_pool, accession="PDT0002", organism="Salmonella")
+    await _seed_isolate(mew_pool, accession="PDT0003", organism="Listeria")
     gateway = AlakazamMewGateway(mew=mew_client)
-    neighbors = await gateway.k_nearest(accession="PDT0001.1", k=5)
+    neighbors = await gateway.k_nearest(accession="PDT0001", k=5)
     accessions = {n.accession for n in neighbors}
-    assert "PDT0001.1" not in accessions
-    assert {"PDT0002.1", "PDT0003.1"}.issubset(accessions)
+    assert "PDT0001" not in accessions
+    assert {"PDT0002", "PDT0003"}.issubset(accessions)
     assert all(n.distance >= 0.0 for n in neighbors)
 
 
@@ -125,23 +125,23 @@ async def test_get_embedding_missing_raises(
 ) -> None:
     await _seed_isolate(
         mew_pool,
-        accession="PDT0001.1",
+        accession="PDT0001",
         organism="X",
         with_embedding=False,
     )
     gateway = AlakazamMewGateway(mew=mew_client)
     with pytest.raises(EmbeddingNotFoundError):
-        await gateway.get_genome_embedding("PDT0001.1")
+        await gateway.get_genome_embedding("PDT0001")
 
 
 async def test_write_score_with_nulls_for_skipped_components(
     mew_pool: AsyncConnectionPool,
     mew_client: MewClient,
 ) -> None:
-    await _seed_isolate(mew_pool, accession="PDT0001.1", organism="Salmonella")
+    await _seed_isolate(mew_pool, accession="PDT0001", organism="Salmonella")
     gateway = AlakazamMewGateway(mew=mew_client)
     await gateway.write_score(
-        accession="PDT0001.1",
+        accession="PDT0001",
         novelty_score=0.42,
         nn_distance=0.4,
         coverage=None,
@@ -153,7 +153,7 @@ async def test_write_score_with_nulls_for_skipped_components(
         await cur.execute(
             "SELECT novelty_score, coverage, mahalanobis, status "
             "FROM isolates WHERE accession = %s",
-            ("PDT0001.1",),
+            ("PDT0001",),
         )
         row: Any = await cur.fetchone()
     assert row is not None
@@ -222,8 +222,8 @@ async def test_list_organisms_with_embeddings_filters_by_min(
     mew_client: MewClient,
 ) -> None:
     for i in range(3):
-        await _seed_isolate(mew_pool, accession=f"PDT{i:05d}.1", organism="Salmonella")
-    await _seed_isolate(mew_pool, accession="PDT99999.1", organism="Listeria", with_embedding=True)
+        await _seed_isolate(mew_pool, accession=f"PDT{i:05d}", organism="Salmonella")
+    await _seed_isolate(mew_pool, accession="PDT99999", organism="Listeria", with_embedding=True)
     gateway = AlakazamMewGateway(mew=mew_client)
     listings = await gateway.list_organisms_with_embeddings(min_isolates=2)
     by_org = dict(listings)
@@ -236,7 +236,7 @@ async def test_stream_embeddings_returns_all_for_organism(
     mew_client: MewClient,
 ) -> None:
     for i in range(4):
-        await _seed_isolate(mew_pool, accession=f"PDT0{i}.1", organism="Salmonella")
+        await _seed_isolate(mew_pool, accession=f"PDT0{i}", organism="Salmonella")
     gateway = AlakazamMewGateway(mew=mew_client)
     rows = await gateway.stream_embeddings_by_organism("Salmonella")
     assert len(rows) == 4

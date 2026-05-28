@@ -22,7 +22,7 @@ _DEFAULT_TS = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
 def make_isolate_discovered(**overrides: Any) -> IsolateDiscovered:
     fields: dict[str, Any] = dict(
-        accession="PDT000123.1",
+        accession="PDT000123",
         version=1,
         organism="Salmonella",
         source="ncbi-pd",
@@ -36,9 +36,9 @@ def make_isolate_discovered(**overrides: Any) -> IsolateDiscovered:
 
 def make_proteins_ready(**overrides: Any) -> ProteinsReady:
     fields: dict[str, Any] = dict(
-        accession="PDT000123.1",
+        accession="PDT000123",
         version=1,
-        os_key="PDT000123.1/1.faa.gz",
+        os_key="PDT000123/1.faa.gz",
         protein_count=4123,
         produced_at=_DEFAULT_TS,
     )
@@ -48,11 +48,11 @@ def make_proteins_ready(**overrides: Any) -> ProteinsReady:
 
 def make_embeddings_ready(**overrides: Any) -> EmbeddingsReady:
     fields: dict[str, Any] = dict(
-        accession="PDT000123.1",
+        accession="PDT000123",
         version=1,
         model="esm-c-600m",
         model_version="1.0.0",
-        os_key="PDT000123.1/1.parquet",
+        os_key="PDT000123/1.parquet",
         embedded_at=_DEFAULT_TS,
     )
     fields.update(overrides)
@@ -61,7 +61,7 @@ def make_embeddings_ready(**overrides: Any) -> EmbeddingsReady:
 
 def make_isolate_scored(**overrides: Any) -> IsolateScored:
     fields: dict[str, Any] = dict(
-        accession="PDT000123.1",
+        accession="PDT000123",
         version=1,
         novelty_score=4.2,
         nn_distance=0.31,

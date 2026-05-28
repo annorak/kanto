@@ -91,9 +91,18 @@ class ParsedRow:
 
     Intentionally a simple value object; the pipeline turns this into
     an :class:`IsolateDiscovered` plus the per-row ftp_path.
+
+    ``target_acc`` is the raw NCBI identifier including the version
+    suffix (e.g. ``PDT000000123.4``) and is what the snapshot diff and
+    exceptions list key by. ``accession`` is the normalized base
+    identifier without the suffix (e.g. ``PDT000000123``); ``version``
+    is the parsed integer. Downstream services consume
+    ``(accession, version)`` so that a version bump never collides
+    with the prior version in Mew.
     """
 
     target_acc: str
+    accession: str
     version: int
     asm_acc: str
     target_creation_date: datetime | None
@@ -207,12 +216,14 @@ def parse_metadata(
             )
             continue
         version = int(match.group(1))
+        accession = _VERSION_RE.sub("", target_acc)
 
         extras = _extract_extras(row, METADATA_PASSTHROUGH_COLUMNS)
 
         parsed.append(
             ParsedRow(
                 target_acc=target_acc,
+                accession=accession,
                 version=version,
                 asm_acc=asm_acc,
                 target_creation_date=_parse_date(row.get("target_creation_date")),

@@ -40,7 +40,7 @@ async def _seed_population(
     rows = rng.standard_normal((n, _DIM)).astype(np.float32)
     async with pool.connection() as conn:
         for i, vec in enumerate(rows):
-            accession = f"PDT_{organism}_{i:04d}.1"
+            accession = f"PDT_{organism}_{i:04d}"
             await IsolateRepository().upsert(
                 conn,
                 IsolateRow(

@@ -134,10 +134,12 @@ class IsolateRepository:
     ) -> None:
         """Insert or update by primary key (``accession``).
 
-        ``ON CONFLICT (accession) DO UPDATE`` — the version is
-        replaced unconditionally because isolates are idempotent on
-        ``(accession, version)`` and a higher-version overwrite of an
-        older row is the intended semantics (see design doc §10).
+        ``ON CONFLICT (accession) DO UPDATE ... WHERE EXCLUDED.version
+        >= isolates.version`` — newer (or equal-version replay) writes
+        win; a stale lower-version event silently no-ops. This is what
+        makes "(accession, v=N+1) supersedes v=N" and "redelivered
+        v=N replay still works" both safe in the face of out-of-order
+        message processing.
         """
         sql = f"""
         INSERT INTO isolates ({_ISOLATE_COLUMNS})
@@ -167,6 +169,7 @@ class IsolateRepository:
             discovered_at     = EXCLUDED.discovered_at,
             scored_at         = EXCLUDED.scored_at,
             raw_metadata      = EXCLUDED.raw_metadata
+         WHERE EXCLUDED.version >= isolates.version
         """
         params = self._row_params(row)
 
@@ -341,6 +344,10 @@ class EmbeddingRepository:
         conn: psycopg.AsyncConnection[Any],
         row: EmbeddingRow,
     ) -> None:
+        """Insert or update by ``accession``. Stale lower-version writes
+        silently no-op so a re-embedded older version never overwrites
+        the newer embedding currently in Mew.
+        """
         sql = """
         INSERT INTO genome_embeddings (accession, version, model, model_version, embedding)
         VALUES (%(accession)s, %(version)s, %(model)s, %(model_version)s, %(embedding)s)
@@ -349,6 +356,7 @@ class EmbeddingRepository:
             model         = EXCLUDED.model,
             model_version = EXCLUDED.model_version,
             embedding     = EXCLUDED.embedding
+         WHERE EXCLUDED.version >= genome_embeddings.version
         """
 
         async def _do() -> None:
