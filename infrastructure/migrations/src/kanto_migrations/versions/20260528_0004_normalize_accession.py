@@ -1,8 +1,8 @@
 """Normalize accession identity: reject in-DB version suffix.
 
-Revision ID: 0002
-Revises: 0001
-Created: 2026-05-27
+Revision ID: 0004
+Revises: 0003
+Created: 2026-05-28
 
 Background
 ----------
@@ -30,8 +30,8 @@ from collections.abc import Sequence
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "0002"
-down_revision: str | Sequence[str] | None = "0001"
+revision: str = "0004"
+down_revision: str | Sequence[str] | None = "0003"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
