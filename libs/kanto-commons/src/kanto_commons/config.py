@@ -1,4 +1,4 @@
-"""Configuration loaded from environment variables.
+"""Configuration loaded from a TOML file + environment variables.
 
 The module exposes :class:`KantoBaseSettings`, the parent class every
 service derives from to add its own service-specific config. The base
@@ -6,10 +6,18 @@ class itself contains the universal config that every service needs:
 Mew connection details, Azure Blob container names, Azure Event Hubs
 (Kafka API) endpoints, and observability endpoints.
 
-Configuration is **only** loaded from environment variables. Files
-committed to the repo (``.envrc``, ``.envrc.example``) supply env vars
-in dev; Azure Key Vault → Helm → pod env supplies them in production.
-We never read a TOML/YAML/JSON config file.
+Configuration precedence
+------------------------
+1. Pydantic field defaults (lowest).
+2. ``KANTO_CONFIG_FILE`` TOML file values, when the variable points at
+   a readable file. Sections of the file map to per-section settings
+   classes (``[mew]`` → :class:`MewSettings`, etc.).
+3. Environment variables (highest). Secrets — DB password, SAS tokens,
+   Modal tokens, OTLP auth headers — must stay env- / Key-Vault-only
+   and are never committed to the file.
+
+The file is read once at :meth:`KantoBaseSettings.load`. A restart is
+required to pick up changes; there is no hot reload.
 
 Naming convention
 -----------------
@@ -25,8 +33,12 @@ is ``KANTO_ENV``, which is the dev-friendly short name for
 
 from __future__ import annotations
 
+import os
+import tomllib
 from enum import StrEnum
-from typing import Annotated, Self
+from functools import lru_cache
+from pathlib import Path
+from typing import Annotated, Any, Self, TypeVar
 
 from pydantic import (
     AliasChoices,
@@ -36,6 +48,85 @@ from pydantic import (
     model_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# Env var pointing at the TOML config file; absent or unset means
+# file-config is disabled and only env vars are consulted.
+CONFIG_FILE_ENV_VAR = "KANTO_CONFIG_FILE"
+
+
+@lru_cache(maxsize=1)
+def _read_config_file() -> dict[str, Any]:
+    """Return parsed TOML contents, or ``{}`` if no file is configured.
+
+    Cached for the process lifetime so each service start parses the
+    file at most once. A unit test that needs to swap files between
+    cases must call ``_read_config_file.cache_clear()``.
+    """
+    path = os.environ.get(CONFIG_FILE_ENV_VAR)
+    if not path:
+        return {}
+    p = Path(path)
+    if not p.is_file():
+        return {}
+    with p.open("rb") as fp:
+        return tomllib.load(fp)
+
+
+_T = TypeVar("_T", bound=BaseSettings)
+
+
+def load_section(cls: type[_T], section: str | None = None) -> _T:
+    """Construct ``cls`` with TOML overrides applied for unset env aliases.
+
+    ``section`` names the TOML table to draw from (e.g. ``"mew"``);
+    when None, the top-level table is used (for :class:`KantoBaseSettings`'s
+    own fields). For each field on ``cls``, the file value is passed as
+    an init kwarg **only when none of the field's env aliases are set
+    in the environment**, which keeps ``env > file > defaults`` order.
+    """
+    file_data = _read_config_file()
+    table = file_data if section is None else file_data.get(section, {})
+    if not isinstance(table, dict):
+        # Misconfigured file (e.g. ``mew = "foo"`` instead of ``[mew]``).
+        # Fall back to env/defaults rather than silently drop.
+        return cls()
+
+    env_prefix = cls.model_config.get("env_prefix", "") or ""
+    init_kwargs: dict[str, Any] = {}
+    for field_name, field in cls.model_fields.items():
+        if field_name not in table:
+            continue
+        if _any_env_name_set(field_name, field, env_prefix):
+            continue
+        init_kwargs[field_name] = table[field_name]
+    return cls(**init_kwargs)
+
+
+def _any_env_name_set(field_name: str, field: Any, env_prefix: str) -> bool:
+    """True if any env var that would populate ``field`` is currently set.
+
+    Checks both pydantic ``validation_alias`` choices and the
+    pydantic-settings convention of ``<env_prefix><FIELD_NAME>``.
+    """
+    names: list[str] = []
+    alias = field.validation_alias
+    if alias is not None:
+        if isinstance(alias, str):
+            names.append(alias)
+        else:
+            # AliasChoices exposes its choices on .choices in pydantic v2.
+            for choice in getattr(alias, "choices", []) or []:
+                if isinstance(choice, str):
+                    names.append(choice)
+    # pydantic-settings env-prefix convention: case-insensitive match
+    # against ``<env_prefix><field_name>``. Use the uppercased form
+    # because that's what env vars look like in practice.
+    names.append(f"{env_prefix}{field_name}".upper())
+    # Case-insensitive scan because settings_config has
+    # ``case_sensitive=False`` across all our settings classes.
+    env_upper = {k.upper() for k in os.environ}
+    return any(n.upper() in env_upper for n in names)
 
 
 class Environment(StrEnum):
@@ -313,16 +404,17 @@ class KantoBaseSettings(BaseSettings):
 
     @classmethod
     def load(cls) -> Self:
-        """Eagerly construct from environment.
+        """Eagerly construct from file + environment.
 
-        Reads ``KANTO_*`` variables, builds each section's settings
-        from its own native prefix, and assembles them into the
-        composite. Raises :class:`pydantic.ValidationError` listing
-        every missing required variable in one message.
+        Reads ``KANTO_CONFIG_FILE`` (TOML) once, then builds each
+        section's settings, with env vars overriding file values and
+        file values overriding pydantic defaults. Raises
+        :class:`pydantic.ValidationError` listing every missing
+        required variable in one message.
         """
-        return cls(
-            mew=MewSettings(),  # type: ignore[call-arg]
-            object_storage=ObjectStorageSettings(),  # type: ignore[call-arg]
-            streaming=StreamingSettings(),  # type: ignore[call-arg]
-            tracing=TracingSettings(),
+        return cls(  # type: ignore[call-arg]
+            mew=load_section(MewSettings, "mew"),
+            object_storage=load_section(ObjectStorageSettings, "object_storage"),
+            streaming=load_section(StreamingSettings, "streaming"),
+            tracing=load_section(TracingSettings, "tracing"),
         )

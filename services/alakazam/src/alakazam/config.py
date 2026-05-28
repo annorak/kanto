@@ -22,6 +22,7 @@ from kanto_commons.config import (
     ObjectStorageSettings,
     StreamingSettings,
     TracingSettings,
+    load_section,
 )
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -236,11 +237,11 @@ class AlakazamSettings(KantoBaseSettings):
     @classmethod
     def load(cls) -> Self:
         return cls(
-            mew=MewSettings(),  # type: ignore[call-arg]
-            object_storage=ObjectStorageSettings(),  # type: ignore[call-arg]
-            streaming=StreamingSettings(),  # type: ignore[call-arg]
-            tracing=TracingSettings(),
-            alakazam=AlakazamServiceSettings(),
+            mew=load_section(MewSettings, "mew"),
+            object_storage=load_section(ObjectStorageSettings, "object_storage"),
+            streaming=load_section(StreamingSettings, "streaming"),
+            tracing=load_section(TracingSettings, "tracing"),
+            alakazam=load_section(AlakazamServiceSettings, "alakazam"),
         )
 
 

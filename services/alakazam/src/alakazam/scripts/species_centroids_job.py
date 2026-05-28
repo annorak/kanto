@@ -141,35 +141,53 @@ async def _compute_one_centroid(
     expected_count: int,
     regularization: float,
 ) -> SpeciesCentroidRecord:
-    embeddings = await gateway.stream_embeddings_by_organism(organism)
-    if len(embeddings) == 0:
+    """Compute mean + population variance in a single streaming pass.
+
+    Welford's online algorithm. Memory stays bounded by two 1152-d
+    float64 accumulators plus the inbound row, regardless of how many
+    isolates the species has.
+    """
+    mean: np.ndarray | None = None
+    m2: np.ndarray | None = None
+    n = 0
+    async for vec in gateway.stream_embeddings_by_organism(organism):
+        arr = np.asarray(vec, dtype=np.float64)
+        n += 1
+        if mean is None:
+            mean = arr.copy()
+            m2 = np.zeros_like(mean)
+            continue
+        assert m2 is not None
+        delta = arr - mean
+        mean += delta / n
+        m2 += delta * (arr - mean)
+
+    if n == 0:
         raise _InsufficientDataError(f"no embeddings for organism={organism!r}")
-    if len(embeddings) < 2:
+    if n < 2:
         # Variance for a single sample is undefined; the regularization
         # would dominate but the centroid would be useless anyway.
-        raise _InsufficientDataError(
-            f"organism={organism!r} has {len(embeddings)} embedding(s); need >= 2"
-        )
-    if len(embeddings) != expected_count:
+        raise _InsufficientDataError(f"organism={organism!r} has {n} embedding(s); need >= 2")
+    if n != expected_count:
         # Race-ish: between the count query and the stream a new row
         # landed. Not a problem; log and proceed with what we have.
         logger.info(
             "alakazam.centroids: organism=%s expected=%d actual=%d",
             organism,
             expected_count,
-            len(embeddings),
+            n,
         )
 
-    matrix = np.asarray(embeddings, dtype=np.float32)
-    centroid = matrix.mean(axis=0)
-    variances = matrix.var(axis=0)
+    assert mean is not None and m2 is not None
+    # Population variance (ddof=0) matches the previous ``matrix.var``.
+    variances = m2 / n
     return SpeciesCentroidRecord(
         organism=organism,
         model=_MODEL,
         model_version=_MODEL_VERSION,
-        n_isolates=int(matrix.shape[0]),
-        centroid=centroid.tolist(),
-        covariance_diagonal=variances.tolist(),
+        n_isolates=n,
+        centroid=mean.astype(np.float32).tolist(),
+        covariance_diagonal=variances.astype(np.float32).tolist(),
         regularization=float(regularization),
         computed_at=datetime.now(UTC),
     )

@@ -1,0 +1,63 @@
+# Kanto base configuration.
+#
+# Read at service startup by KantoBaseSettings.load() when
+# KANTO_CONFIG_FILE points at this file. Env vars override anything
+# in here; secrets stay env-only (DB passwords, SAS tokens, Modal
+# tokens, OTLP auth headers).
+#
+# Precedence: defaults < this file < env vars.
+
+# ----------------------------------------------------------------------
+# Shared infrastructure
+# ----------------------------------------------------------------------
+
+[mew]
+host = "mew.local"
+port = 5432
+database = "mew"
+user = "kanto"
+# password -- env-only (KANTO_MEW_PASSWORD)
+sslmode = "verify-full"
+pool_min_size = 2
+pool_max_size = 10
+
+[object_storage]
+# account_url -- usually set per-environment via env (KANTO_OS_ACCOUNT_URL)
+proteins_container = "kanto-proteins"
+embeddings_container = "kanto-embeddings"
+metadata_container = "kanto-metadata"
+
+[streaming]
+# bootstrap_servers -- env-only (KANTO_STREAMING_BOOTSTRAP_SERVERS)
+discovered_topic = "kanto.discovered"
+embedded_topic = "kanto.embedded"
+scored_topic = "kanto.scored"
+# sasl_username / sasl_password -- env-only
+max_processing_attempts = 3
+
+[tracing]
+# endpoint -- env-only when set; defaults to console exporter for dev
+sample_rate = 1.0
+
+# ----------------------------------------------------------------------
+# Per-service
+# ----------------------------------------------------------------------
+
+[growlithe]
+# Service knobs (poll interval, organism list, etc.) can be set here.
+# All KANTO_GROWLITHE_* env vars override.
+
+[snorlax]
+consumer_group = "snorlax"
+modal_function_ref = "kanto-ditto/DittoEmbedder/embed"
+modal_environment = "main"
+modal_enabled = true
+prodigal_binary = "prodigal"
+prodigal_mode = "single"
+work_dir = "/tmp/snorlax"
+
+[ditto]
+# Per-Ditto knobs (model id, GPU type, batch sizes) can be set here.
+
+[alakazam]
+consumer_group = "alakazam"

@@ -173,9 +173,9 @@ class AlakazamService:
         run_once = self._settings.alakazam.run_once
         async for parsed in self._consumer.messages():
             if not isinstance(parsed.event, EmbeddingsReady):
-                await self._consumer.handle_failure(
+                await self._consumer.dlq_now(
                     parsed,
-                    TypeError(f"unexpected event {type(parsed.event).__name__} on {parsed.topic}"),
+                    f"unexpected event {type(parsed.event).__name__} on {parsed.topic}",
                 )
                 continue
 
@@ -205,20 +205,13 @@ class AlakazamService:
             await self._consumer.commit(msg)
             return
         if result.outcome is Outcome.DLQ:
-            for _ in range(self._settings.streaming.max_processing_attempts):
-                routed = await self._consumer.handle_failure(
-                    msg,
-                    _PipelineDLQError(result.reason or result.outcome.value),
-                )
-                if routed:
-                    return
-            logger.error(
-                "alakazam.service: handle_failure did not DLQ %s; committing",
-                msg.offset,
-            )
-            await self._consumer.commit(msg)
+            await self._consumer.dlq_now(msg, result.reason or result.outcome.value)
             return
-        # TRANSIENT_RETRY: leave the offset alone; aiokafka redelivers.
+        # TRANSIENT_RETRY: register with the consumer's retry budget;
+        # the wrapper holds the offset and re-yields on the next loop.
+        await self._consumer.handle_failure(
+            msg, _PipelineDLQError(result.reason or result.outcome.value)
+        )
 
     async def _centroid_refresh_loop(self) -> None:
         """Background timer that reloads the species centroid cache."""

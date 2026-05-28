@@ -113,6 +113,33 @@ class Pipeline:
             self._metrics.events_failed.add(1, attributes={"category": "embedding_missing"})
             return ProcessingResult(outcome=Outcome.DLQ, reason="embedding_missing")
 
+        # Version reconciliation. The Mew embedding row is the source
+        # of truth; the event is an after-the-fact notification.
+        if event.version < embedding.version:
+            # A newer version has already replaced this one in Mew.
+            # Scoring it now would overwrite the newer state with an
+            # older score — silently drop and commit.
+            logger.info(
+                "alakazam.pipeline: stale event accession=%s "
+                "event_version=%d stored_version=%d -- skipping",
+                event.accession,
+                event.version,
+                embedding.version,
+            )
+            self._metrics.events_succeeded.add(1)
+            return ProcessingResult(outcome=Outcome.SUCCESS, reason="stale_version")
+        if event.version > embedding.version:
+            # We saw the event before Mew caught up (race). Transient
+            # retry: the next replay will find the matching version.
+            logger.warning(
+                "alakazam.pipeline: embedding lags event accession=%s "
+                "event_version=%d stored_version=%d -- retrying",
+                event.accession,
+                event.version,
+                embedding.version,
+            )
+            return ProcessingResult(outcome=Outcome.TRANSIENT_RETRY, reason="embedding_lags_event")
+
         ctx = IsolateContext(
             accession=event.accession,
             version=event.version,

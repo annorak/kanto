@@ -154,14 +154,19 @@ def test_parse_rows_emits_diff_only(ncbi: NCBIPathogenDetection, ncbi_fixture_di
     parsed = ncbi.parse_rows(snap, previous_metadata_tsv=prev_metadata)
 
     accs = sorted(e.accession for e in parsed.events)
-    # 10 total in fixture - 5 previously seen - 2 QC = 3 new
-    assert accs == ["PDT000000016.4", "PDT000000019.11", "PDT000000021.3"]
+    # 10 total in fixture - 5 previously seen - 2 QC = 3 new.
+    # accession is the stripped base id; the raw target_acc with version
+    # suffix is preserved in metadata for traceability.
+    assert accs == ["PDT000000016", "PDT000000019", "PDT000000021"]
+    versions = sorted(e.version for e in parsed.events)
+    assert versions == [3, 4, 11]
     assert parsed.qc_filtered == 2
     for event in parsed.events:
         assert event.source == SOURCE_ID
         assert event.organism == "Listeria"
         assert event.metadata["snapshot_id"] == "PDG000000001.4703"
         assert event.metadata["asm_acc"].startswith("GCA_")
+        assert event.metadata["target_acc"].startswith("PDT")
         assert event.ftp_path.startswith(GENBANK_ASSEMBLY_BASE)
 
 

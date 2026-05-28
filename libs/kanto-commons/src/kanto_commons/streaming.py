@@ -226,7 +226,35 @@ class StreamingConsumer:
     A higher-level :meth:`run` helper wraps the boilerplate with
     automatic retry + DLQ routing for callers who don't need the
     finer control.
+
+    Offset-safety contract
+    ----------------------
+    Once :meth:`messages` yields a record, the consumer **will not**
+    advance to the next underlying message until one of these terminal
+    calls fires for the in-flight record:
+
+    * :meth:`commit` — success, offset committed, slot cleared.
+    * :meth:`dlq_now` — deterministic DLQ; DLQ written + offset
+      committed + slot cleared. Use when the caller already knows the
+      message cannot succeed on retry.
+    * :meth:`handle_failure` returning ``True`` — transient retry
+      budget exhausted; DLQ written + offset committed + slot cleared.
+
+    A :meth:`handle_failure` that returns ``False`` leaves the slot
+    intact and sleeps ``_retry_backoff_seconds``. The next iteration of
+    :meth:`messages` re-yields the same record. This guarantees no
+    later offset on the same partition can be committed past an
+    unresolved earlier offset.
+
+    The slot is single-valued: in multi-partition deployments this
+    serializes processing across partitions on the same pod. Kanto's
+    1-pod-per-partition pattern makes that a non-issue.
     """
+
+    # Small fixed backoff between transient retries; not exposed in
+    # settings because services pick their own retry budget via
+    # ``max_processing_attempts``.
+    _retry_backoff_seconds: float = 0.5
 
     def __init__(
         self,
@@ -248,6 +276,10 @@ class StreamingConsumer:
         # In-memory tracking of attempt counts for messages we've seen.
         # ``(topic, partition, offset) -> attempt_count``.
         self._attempts: dict[tuple[str, int, int], int] = {}
+        # Single-slot replay buffer enforcing the offset-safety contract.
+        # Set when :meth:`messages` yields; cleared when the caller calls
+        # a terminal method for the same record.
+        self._pending: ConsumedMessage[KantoEvent] | None = None
 
     @classmethod
     def from_settings(
@@ -300,8 +332,22 @@ class StreamingConsumer:
         :func:`kanto_commons.tracing.use_extracted_context` and the
         message's ``headers``. The high-level :meth:`run` does this
         for you.
+
+        If a previously-yielded record has not yet reached a terminal
+        outcome (commit / dlq_now / exhausted handle_failure), it is
+        re-yielded here instead of pulling the next record from Kafka.
         """
-        async for raw in self._consumer:
+        raw_iter = self._consumer.__aiter__()
+        while True:
+            # Replay first, before fetching a new record. This keeps the
+            # retry latency bound by ``_retry_backoff_seconds`` rather
+            # than by inter-message arrival on a quiet topic.
+            while self._pending is not None:
+                yield self._pending
+            try:
+                raw = await raw_iter.__anext__()
+            except StopAsyncIteration:
+                return
             headers = {k: v.decode("utf-8") for k, v in (raw.headers or [])}
             try:
                 envelope = EventEnvelope.model_validate_json(raw.value)
@@ -318,7 +364,7 @@ class StreamingConsumer:
                 await self._commit_offset(raw.partition, raw.offset)
                 continue
 
-            yield ConsumedMessage(
+            parsed = ConsumedMessage(
                 event=event,
                 raw_value=raw.value,
                 topic=raw.topic,
@@ -326,6 +372,8 @@ class StreamingConsumer:
                 offset=raw.offset,
                 headers=headers,
             )
+            self._pending = parsed
+            yield parsed
 
     async def commit(self, message: ConsumedMessage[KantoEvent]) -> None:
         """Commit the offset for ``message``. Call after successful processing.
@@ -334,6 +382,7 @@ class StreamingConsumer:
         """
         await self._commit_offset(message.partition, message.offset)
         self._attempts.pop((message.topic, message.partition, message.offset), None)
+        self._clear_pending(message)
 
     async def _commit_offset(self, partition: int, offset: int) -> None:
         from aiokafka import TopicPartition  # local import — keep top-level slim
@@ -357,7 +406,10 @@ class StreamingConsumer:
         If the configured retry budget is exhausted, the message is
         sent to the DLQ and the offset is committed (so the next
         consumer instance doesn't reprocess). Otherwise the offset is
-        NOT committed; aiokafka will redeliver after the next poll.
+        NOT committed AND the replay slot is retained, so the next
+        :meth:`messages` yield re-emits the same record. Sleeps
+        ``_retry_backoff_seconds`` before returning False so callers
+        don't busy-loop on a transient failure.
         """
         coords = (message.topic, message.partition, message.offset)
         self._attempts[coords] = self._attempts.get(coords, 0) + 1
@@ -369,6 +421,7 @@ class StreamingConsumer:
                 self._max_attempts,
                 coords,
             )
+            await asyncio.sleep(self._retry_backoff_seconds)
             return False
         await self._dispatch_to_dlq(
             raw_value=message.raw_value,
@@ -380,7 +433,41 @@ class StreamingConsumer:
         )
         await self._commit_offset(message.partition, message.offset)
         self._attempts.pop(coords, None)
+        self._clear_pending(message)
         return True
+
+    async def dlq_now(
+        self,
+        message: ConsumedMessage[KantoEvent],
+        reason: str,
+    ) -> None:
+        """Route ``message`` straight to DLQ + commit. Skips attempt counting.
+
+        Use when the caller has determined the message is deterministically
+        DLQ-bound (e.g. permanent application-side failure) and there's no
+        point spending retry budget on it.
+        """
+        coords = (message.topic, message.partition, message.offset)
+        await self._dispatch_to_dlq(
+            raw_value=message.raw_value,
+            partition=message.partition,
+            offset=message.offset,
+            failure_reason=reason,
+            failure_traceback=None,
+            attempt_count=self._attempts.get(coords, 0) + 1,
+        )
+        await self._commit_offset(message.partition, message.offset)
+        self._attempts.pop(coords, None)
+        self._clear_pending(message)
+
+    def _clear_pending(self, message: ConsumedMessage[KantoEvent]) -> None:
+        if (
+            self._pending is not None
+            and self._pending.topic == message.topic
+            and self._pending.partition == message.partition
+            and self._pending.offset == message.offset
+        ):
+            self._pending = None
 
     async def _dispatch_to_dlq(
         self,
@@ -433,10 +520,10 @@ class StreamingConsumer:
                 with use_extracted_context(parsed.headers):
                     await handler(parsed)
             except Exception as exc:
-                routed = await self.handle_failure(parsed, exc)
-                if not routed:
-                    # Yield control so retry timing isn't a busy loop.
-                    await asyncio.sleep(0)
+                # handle_failure sleeps its own backoff and keeps the
+                # replay slot intact on transient failure, so the next
+                # messages() iteration re-yields the same record.
+                await self.handle_failure(parsed, exc)
                 continue
             await self.commit(parsed)
 

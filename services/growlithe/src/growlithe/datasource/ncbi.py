@@ -233,10 +233,14 @@ class NCBIPathogenDetection:
         metadata = {
             "snapshot_id": ref.snapshot_id,
             "asm_acc": row.asm_acc,
+            # Preserve the raw upstream identifier with version suffix
+            # for traceability — the normalized accession + version on
+            # the event are what downstream services key by.
+            "target_acc": row.target_acc,
             **row.extras,
         }
         return IsolateDiscovered(
-            accession=row.target_acc,
+            accession=row.accession,
             version=row.version,
             organism=ref.organism,
             source=self.name,

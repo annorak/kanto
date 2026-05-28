@@ -72,6 +72,24 @@ def test_extracts_version_from_target_acc(ncbi_fixture_dir: Path) -> None:
     assert versions["PDT000000014.5"] == 5
 
 
+def test_accession_is_stripped_of_version_suffix(ncbi_fixture_dir: Path) -> None:
+    """``accession`` is the normalized base id; ``version`` is the int.
+
+    Downstream services key Mew rows by ``(accession, version)`` — the
+    accession must not carry the version suffix or a v=N+1 event would
+    insert a new row instead of superseding the v=N row.
+    """
+    import re
+
+    rows, _ = parse_metadata(_load(ncbi_fixture_dir, "Listeria_PDG000000001.4702.metadata.tsv"))
+    by_target = {r.target_acc: r for r in rows}
+    sample = by_target["PDT000000011.3"]
+    assert sample.accession == "PDT000000011"
+    assert sample.version == 3
+    for row in rows:
+        assert re.search(r"\.\d+$", row.accession) is None, row.accession
+
+
 def test_passthrough_columns_lifted_into_extras(ncbi_fixture_dir: Path) -> None:
     rows, _ = parse_metadata(_load(ncbi_fixture_dir, "Listeria_PDG000000001.4702.metadata.tsv"))
     first = rows[0]

@@ -122,7 +122,7 @@ def _gateway_with_one(accession: str) -> _StubGateway:
     )
 
 
-def _embeddings_event(accession: str = "PDT0001.1") -> EmbeddingsReady:
+def _embeddings_event(accession: str = "PDT0001") -> EmbeddingsReady:
     return EmbeddingsReady(
         accession=accession,
         version=1,
@@ -139,7 +139,7 @@ def _embeddings_event(accession: str = "PDT0001.1") -> EmbeddingsReady:
 
 
 async def test_pipeline_success_tier_one_only() -> None:
-    accession = "PDT0001.1"
+    accession = "PDT0001"
     gateway: Any = _gateway_with_one(accession)
     producer: Any = _StubProducer()
     pipeline = Pipeline(
@@ -165,7 +165,7 @@ async def test_pipeline_success_tier_one_only() -> None:
 
 
 async def test_pipeline_success_tier_two() -> None:
-    accession = "PDT0002.1"
+    accession = "PDT0002"
     gateway: Any = _gateway_with_one(accession)
     producer: Any = _StubProducer()
     pipeline = Pipeline(
@@ -206,7 +206,7 @@ async def test_pipeline_missing_isolate_dlqs() -> None:
 
 
 async def test_pipeline_missing_embedding_dlqs() -> None:
-    accession = "PDT0003.1"
+    accession = "PDT0003"
     gateway = _StubGateway(
         isolates={
             accession: IsolateForScoring(
@@ -232,12 +232,111 @@ async def test_pipeline_missing_embedding_dlqs() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Version reconciliation
+# ---------------------------------------------------------------------------
+
+
+async def test_pipeline_stale_event_skips_and_commits() -> None:
+    """Mew already holds a newer version of this accession; the event is
+    a redelivery of an older version. Drop without scoring (so we don't
+    overwrite the newer state) and return SUCCESS so the offset advances.
+    """
+    accession = "PDT_STALE"
+    gateway = _StubGateway(
+        isolates={
+            accession: IsolateForScoring(
+                accession=accession,
+                version=3,
+                organism="Salmonella",
+                status=IsolateStatus.SCORED,
+            )
+        },
+        embeddings={
+            accession: GenomeEmbeddingRecord(
+                accession=accession,
+                version=3,  # stored newer than event
+                model="esm-c-600m",
+                model_version="1.0.0",
+                embedding=[0.0] * _DIM,
+            )
+        },
+    )
+    producer: Any = _StubProducer()
+    pipeline = Pipeline(
+        gateway=gateway,  # type: ignore[arg-type]
+        orchestrator=_orchestrator(nn=0.1, cov=0.0, maha=0.0, candidate=0.30),
+        producer=producer,
+        metrics=AlakazamMetrics.build(),
+        candidate_threshold=0.30,
+    )
+
+    event = EmbeddingsReady(
+        accession=accession,
+        version=1,  # stale
+        model="esm-c-600m",
+        model_version="1.0.0",
+        os_key=f"{accession}/1.parquet",
+        embedded_at=datetime.now(UTC),
+    )
+    result = await pipeline.process(event)
+    assert result.outcome is Outcome.SUCCESS
+    assert result.reason == "stale_version"
+    assert gateway.writes == []
+    assert producer.sent == []
+
+
+async def test_pipeline_embedding_lags_event_retries() -> None:
+    """The event arrived ahead of Mew catching up (race). Transient retry."""
+    accession = "PDT_LAG"
+    gateway = _StubGateway(
+        isolates={
+            accession: IsolateForScoring(
+                accession=accession,
+                version=1,
+                organism="Salmonella",
+                status=IsolateStatus.EMBEDDED,
+            )
+        },
+        embeddings={
+            accession: GenomeEmbeddingRecord(
+                accession=accession,
+                version=1,  # stored older than event
+                model="esm-c-600m",
+                model_version="1.0.0",
+                embedding=[0.0] * _DIM,
+            )
+        },
+    )
+    producer: Any = _StubProducer()
+    pipeline = Pipeline(
+        gateway=gateway,  # type: ignore[arg-type]
+        orchestrator=_orchestrator(nn=0.1, cov=0.0, maha=0.0, candidate=0.30),
+        producer=producer,
+        metrics=AlakazamMetrics.build(),
+        candidate_threshold=0.30,
+    )
+
+    event = EmbeddingsReady(
+        accession=accession,
+        version=2,  # ahead of Mew
+        model="esm-c-600m",
+        model_version="1.0.0",
+        os_key=f"{accession}/2.parquet",
+        embedded_at=datetime.now(UTC),
+    )
+    result = await pipeline.process(event)
+    assert result.outcome is Outcome.TRANSIENT_RETRY
+    assert result.reason == "embedding_lags_event"
+    assert gateway.writes == []
+
+
+# ---------------------------------------------------------------------------
 # In-flight gauge
 # ---------------------------------------------------------------------------
 
 
 async def test_in_flight_tracked() -> None:
-    accession = "PDT0004.1"
+    accession = "PDT0004"
     gateway: Any = _gateway_with_one(accession)
     producer: Any = _StubProducer()
 

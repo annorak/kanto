@@ -244,7 +244,7 @@ def _make_recording_client() -> FakeMewClient:
 @pytest.fixture
 def event() -> IsolateDiscovered:
     return IsolateDiscovered(
-        accession="PDT000000001.1",
+        accession="PDT000000001",
         version=1,
         organism="Listeria",
         source="ncbi-pd",
@@ -327,7 +327,7 @@ async def test_happy_path_end_to_end(
 
     assert result.outcome is Outcome.SUCCESS
     assert result.modal_call_id is not None
-    assert result.os_key == "PDT000000001.1/1.faa.gz"
+    assert result.os_key == "PDT000000001/1.faa.gz"
     assert result.protein_count == 2
 
     # Protein FASTA landed in fake OS.
@@ -519,7 +519,7 @@ async def test_modal_spawn_failure_routes_to_dlq_after_upload(
     assert result.outcome is Outcome.DLQ
     assert result.category is FailureCategory.MODAL_SPAWN_FAILED
     # Protein FASTA is in OS — operator can manually re-spawn.
-    assert storage.all_keys("kanto-proteins-test") == ["PDT000000001.1/1.faa.gz"]
+    assert storage.all_keys("kanto-proteins-test") == ["PDT000000001/1.faa.gz"]
 
 
 # ---------------------------------------------------------------------------
@@ -567,7 +567,7 @@ async def test_missing_asm_acc_is_validation_failed(
     tmp_work_dir: Path,
 ) -> None:
     event = IsolateDiscovered(
-        accession="PDT000000002.1",
+        accession="PDT000000002",
         version=1,
         organism="Listeria",
         source="ncbi-pd",

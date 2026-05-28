@@ -182,7 +182,7 @@ async def test_send_default_key_is_accession_version(
     prod, fake = producer_pair
     await prod.start()
     await prod.send(make_isolate_scored())
-    assert fake.sent[0].key == b"PDT000123.1:1"
+    assert fake.sent[0].key == b"PDT000123:1"
 
 
 async def test_send_proteins_ready_rejected(
@@ -248,6 +248,10 @@ async def test_consumer_yields_parsed_event() -> None:
     parsed: list[ConsumedMessage[Any]] = []
     async for msg in consumer.messages():
         parsed.append(msg)
+        # Finalize so the replay slot clears and the iterator can
+        # advance to end-of-records. See the offset-safety contract
+        # in StreamingConsumer.
+        await consumer.commit(msg)
     assert len(parsed) == 1
     assert isinstance(parsed[0].event, IsolateScored)
 
@@ -325,6 +329,98 @@ async def test_handle_failure_records_attempt_count_in_envelope() -> None:
     assert "second" in dlq.failure_reason
     assert dlq.consumer_group == "test-group"
     assert dlq.consumer_id == "test-consumer-0"
+
+
+# ---------------------------------------------------------------------------
+# Offset-safety: never skip an earlier unresolved offset
+# ---------------------------------------------------------------------------
+
+
+async def test_transient_failure_blocks_later_offset() -> None:
+    """offset 0 transient must not allow offset 1 to commit past it.
+
+    The wrapper's replay slot keeps re-yielding offset 0 until it
+    reaches a terminal outcome. Only then does offset 1 surface.
+    """
+    records = [
+        _record_for(make_isolate_scored(), offset=0),
+        _record_for(make_isolate_scored(), offset=1),
+    ]
+    consumer, fake_consumer, _fp = _consumer_with(records, max_attempts=5)
+    # Disable the backoff sleep so the test runs fast.
+    consumer._retry_backoff_seconds = 0.0  # type: ignore[assignment]
+
+    seen_offsets: list[int] = []
+    call_count = 0
+
+    async def handler(msg: ConsumedMessage[Any]) -> None:
+        nonlocal call_count
+        call_count += 1
+        seen_offsets.append(msg.offset)
+        # Offset 0 fails twice transiently, succeeds on the third try.
+        if msg.offset == 0 and call_count <= 2:
+            raise RuntimeError("transient")
+
+    await consumer.run(handler)
+
+    # Offset 0 must reach a terminal outcome before offset 1 is seen.
+    first_offset_1 = seen_offsets.index(1)
+    assert all(o == 0 for o in seen_offsets[:first_offset_1])
+    # And offset 1 must eventually be processed.
+    assert 1 in seen_offsets
+    # Only ``offset+1`` commits were emitted, in order: 1 (for offset 0),
+    # then 2 (for offset 1). No commit may jump over offset 0.
+    committed = [next(iter(c.values())).offset for c in fake_consumer.commits]
+    assert committed == [1, 2]
+
+
+async def test_exhausted_retry_dlqs_before_committing() -> None:
+    """Exhausted retries write DLQ first, THEN commit the offset.
+
+    The wrapper's contract: the DLQ produce must complete before the
+    consumer offset advances. A producer that fails to write DLQ must
+    raise out of handle_failure, leaving the offset uncommitted.
+    """
+    record = _record_for(make_isolate_scored(), offset=7)
+    consumer, fake_consumer, fake_producer = _consumer_with([record], max_attempts=2)
+    consumer._retry_backoff_seconds = 0.0  # type: ignore[assignment]
+
+    msg = None
+    async for m in consumer.messages():
+        msg = m
+        break
+    assert msg is not None
+
+    # First attempt: not yet DLQ.
+    assert await consumer.handle_failure(msg, RuntimeError("x")) is False
+    assert fake_producer.sent == []
+    assert fake_consumer.commits == []
+
+    # Second attempt: DLQ + commit. DLQ produce happens before the
+    # commit because the wrapper awaits the produce first.
+    assert await consumer.handle_failure(msg, RuntimeError("x")) is True
+    assert len(fake_producer.sent) == 1
+    assert fake_producer.sent[0].topic == "kanto.scored.dlq"
+    assert len(fake_consumer.commits) == 1
+
+
+async def test_dlq_now_skips_attempt_count_and_commits() -> None:
+    """``dlq_now`` is the deterministic-DLQ shortcut."""
+    record = _record_for(make_isolate_scored(), offset=3)
+    consumer, fake_consumer, fake_producer = _consumer_with([record])
+
+    msg = None
+    async for m in consumer.messages():
+        msg = m
+        break
+    assert msg is not None
+
+    await consumer.dlq_now(msg, "permanent: malformed asm_acc")
+    assert len(fake_producer.sent) == 1
+    assert fake_producer.sent[0].topic == "kanto.scored.dlq"
+    dlq = DLQEnvelope.model_validate_json(fake_producer.sent[0].value)
+    assert "permanent" in dlq.failure_reason
+    assert len(fake_consumer.commits) == 1
 
 
 async def test_run_commits_on_success_and_dlqs_on_failure() -> None:

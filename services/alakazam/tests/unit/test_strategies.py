@@ -45,7 +45,7 @@ class _FakeGateway:
 @pytest.fixture
 def ctx() -> IsolateContext:
     return IsolateContext(
-        accession="PDT0001.1",
+        accession="PDT0001",
         version=1,
         organism="Salmonella",
         embedding=[0.0] * _DIM,
@@ -107,7 +107,7 @@ async def test_coverage_recognized_fraction(ctx: IsolateContext, small_reference
     storage = FakeObjectStorage()
     storage.put_bytes(
         container="kanto-embeddings",
-        key="PDT0001.1/1.parquet",
+        key="PDT0001/1.parquet",
         data=parquet,
     )
     strategy = CoverageStrategy(
@@ -139,7 +139,7 @@ async def test_coverage_no_matches_high_score(
     storage = FakeObjectStorage()
     storage.put_bytes(
         container="kanto-embeddings",
-        key="PDT0001.1/1.parquet",
+        key="PDT0001/1.parquet",
         data=parquet,
     )
     strategy = CoverageStrategy(

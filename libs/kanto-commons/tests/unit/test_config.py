@@ -7,6 +7,9 @@ constraints are enforced.
 
 from __future__ import annotations
 
+import textwrap
+from pathlib import Path
+
 import pytest
 from kanto_commons.config import (
     Environment,
@@ -16,6 +19,7 @@ from kanto_commons.config import (
     ObjectStorageSettings,
     StreamingSettings,
     TracingSettings,
+    _read_config_file,
 )
 from pydantic import SecretStr, ValidationError
 
@@ -29,6 +33,9 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Wipe every KANTO_* / MEW_* / STREAMING_* var per test for isolation."""
     for key in list(os_keys()):
         monkeypatch.delenv(key, raising=False)
+    monkeypatch.delenv("KANTO_CONFIG_FILE", raising=False)
+    # The file reader caches its parse result; reset between tests.
+    _read_config_file.cache_clear()
 
 
 def os_keys() -> list[str]:
@@ -211,3 +218,86 @@ def test_password_is_secret_str(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_minimum_env(monkeypatch)
     settings = _SnorlaxSettings.load()
     assert isinstance(settings.mew.password, SecretStr)
+
+
+# ---------------------------------------------------------------------------
+# File-based config: defaults < file < env precedence
+# ---------------------------------------------------------------------------
+
+
+def _write_toml(tmp_path: Path, body: str) -> Path:
+    path = tmp_path / "kanto.toml"
+    path.write_text(textwrap.dedent(body))
+    return path
+
+
+def test_file_value_overrides_default_when_env_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _set_minimum_env(monkeypatch)
+    # sslmode default is "verify-full"; the file overrides it.
+    cfg = _write_toml(
+        tmp_path,
+        """\
+        [mew]
+        sslmode = "disable"
+        """,
+    )
+    monkeypatch.setenv("KANTO_CONFIG_FILE", str(cfg))
+    settings = _SnorlaxSettings.load()
+    assert settings.mew.sslmode == "disable"
+
+
+def test_env_overrides_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_minimum_env(monkeypatch)
+    cfg = _write_toml(
+        tmp_path,
+        """\
+        [mew]
+        sslmode = "disable"
+        """,
+    )
+    monkeypatch.setenv("KANTO_CONFIG_FILE", str(cfg))
+    monkeypatch.setenv("KANTO_MEW_SSLMODE", "require")
+    settings = _SnorlaxSettings.load()
+    assert settings.mew.sslmode == "require"
+
+
+def test_missing_file_falls_back_to_defaults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _set_minimum_env(monkeypatch)
+    monkeypatch.setenv("KANTO_CONFIG_FILE", str(tmp_path / "no-such-file.toml"))
+    settings = _SnorlaxSettings.load()
+    assert settings.mew.sslmode == "verify-full"  # pydantic default
+
+
+def test_file_value_for_required_field_satisfies_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A required field can be supplied entirely via the TOML file
+    (no env var) -- useful for non-secret required settings. The
+    password is the only field that must stay env-only."""
+    monkeypatch.setenv("KANTO_MEW_PASSWORD", "supersecret")  # secret stays in env
+    cfg = _write_toml(
+        tmp_path,
+        """\
+        [mew]
+        host = "from-file"
+        database = "mew"
+        user = "kanto"
+
+        [object_storage]
+        account_url = "https://from-file.blob.core.windows.net"
+
+        [streaming]
+        bootstrap_servers = "kafka-from-file:9092"
+        """,
+    )
+    monkeypatch.setenv("KANTO_CONFIG_FILE", str(cfg))
+    settings = _SnorlaxSettings.load()
+    assert settings.mew.host == "from-file"
+    assert (
+        settings.object_storage.account_url == "https://from-file.blob.core.windows.net"
+    )
+    assert settings.streaming.bootstrap_servers == "kafka-from-file:9092"

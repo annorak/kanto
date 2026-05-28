@@ -255,6 +255,83 @@ async def test_idempotency_does_not_skip_on_different_model_version(
     assert result.proteins_embedded == 1
 
 
+async def test_idempotency_does_not_skip_on_higher_isolate_version(
+    settings: DittoServiceSettings,
+    fake_blob_io: FakeBlobIO,
+    fake_embedder: FakeEmbedder,
+    fake_emitter: FakeEventEmitter,
+) -> None:
+    """Mew has v=1 of accession PDT001; a v=2 event arrives. The pipeline
+    MUST run the GPU work, not short-circuit on the stored v=1 row.
+    """
+    fake_blob_io.put_protein(
+        container="kanto-proteins-test",
+        key="PDT001/2.faa.gz",
+        data=make_fasta_bytes({"p1": "MAGI", "p2": "GGGT"}),
+    )
+    erepo = FakeEmbeddingRepo(
+        existing={
+            "PDT001": EmbeddingRow(
+                accession="PDT001",
+                version=1,  # stored version is older than the event's
+                model="esmc_600m",
+                model_version=settings.model_version,
+                embedding=[0.0] * settings.embedding_dim,
+            )
+        }
+    )
+    pipeline, erepo_out, irepo = _make_pipeline(
+        settings=settings,
+        blob_io=fake_blob_io,
+        embedder=fake_embedder,
+        emitter=fake_emitter,
+        embedding_repo=erepo,
+    )
+
+    result = await pipeline.embed_isolate(accession="PDT001", version=2, os_key="PDT001/2.faa.gz")
+
+    assert result.skipped_idempotent is False
+    assert result.proteins_embedded == 2
+    assert len(erepo_out.upserts) == 1
+    assert erepo_out.upserts[0].version == 2
+    assert irepo.status_calls == [("PDT001", IsolateStatus.EMBEDDED)]
+
+
+async def test_idempotency_skips_on_equal_or_lower_event_version(
+    settings: DittoServiceSettings,
+    fake_blob_io: FakeBlobIO,
+    fake_embedder: FakeEmbedder,
+    fake_emitter: FakeEventEmitter,
+) -> None:
+    """Stored version >= event version => already embedded; skip + re-emit."""
+    erepo = FakeEmbeddingRepo(
+        existing={
+            "PDT001": EmbeddingRow(
+                accession="PDT001",
+                version=3,  # stored newer than event
+                model="esmc_600m",
+                model_version=settings.model_version,
+                embedding=[0.0] * settings.embedding_dim,
+            )
+        }
+    )
+    pipeline, erepo_out, irepo = _make_pipeline(
+        settings=settings,
+        blob_io=fake_blob_io,
+        embedder=fake_embedder,
+        emitter=fake_emitter,
+        embedding_repo=erepo,
+    )
+
+    result = await pipeline.embed_isolate(accession="PDT001", version=2, os_key="PDT001/2.faa.gz")
+
+    assert result.skipped_idempotent is True
+    assert len(erepo_out.upserts) == 0
+    assert len(irepo.status_calls) == 0
+    # Event still re-emitted so downstream isn't stuck.
+    assert len(fake_emitter.emitted) == 1
+
+
 async def test_missing_fasta_raises_permanent_error(
     settings: DittoServiceSettings,
     fake_blob_io: FakeBlobIO,

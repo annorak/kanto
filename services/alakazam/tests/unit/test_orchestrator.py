@@ -41,7 +41,7 @@ class _ConstStrategy(ScoringStrategy):
 
 def _ctx() -> IsolateContext:
     return IsolateContext(
-        accession="PDT0001.1",
+        accession="PDT0001",
         version=1,
         organism="Salmonella",
         embedding=[0.0] * _DIM,

@@ -108,7 +108,7 @@ async def test_full_scoring_flow_tier_two(
     seed_vec /= np.linalg.norm(seed_vec)
     await _seed_isolate_with_embedding(
         mew_pool,
-        accession="PDT0001.1",
+        accession="PDT0001",
         organism="Salmonella",
         embedding=seed_vec,
     )
@@ -118,7 +118,7 @@ async def test_full_scoring_flow_tier_two(
         neigh = rng.standard_normal(_DIM).astype(np.float32)
         await _seed_isolate_with_embedding(
             mew_pool,
-            accession=f"PDT_neigh_{i:02d}.1",
+            accession=f"PDT_neigh_{i:02d}",
             organism="Salmonella",
             embedding=neigh,
         )
@@ -187,7 +187,7 @@ async def test_full_scoring_flow_tier_two(
         candidate_threshold=0.0,
     )
 
-    result = await pipeline.process(make_embeddings_ready(accession="PDT0001.1"))
+    result = await pipeline.process(make_embeddings_ready(accession="PDT0001"))
     assert result.outcome is Outcome.SUCCESS
     assert result.was_candidate
     assert result.score is not None
@@ -199,7 +199,7 @@ async def test_full_scoring_flow_tier_two(
         await cur.execute(
             "SELECT status, novelty_score, coverage, mahalanobis "
             "FROM isolates WHERE accession = %s",
-            ("PDT0001.1",),
+            ("PDT0001",),
         )
         row: Any = await cur.fetchone()
     assert row is not None
@@ -209,7 +209,7 @@ async def test_full_scoring_flow_tier_two(
     assert row[3] is not None
 
     assert len(producer.sent) == 1
-    assert producer.sent[0].accession == "PDT0001.1"
+    assert producer.sent[0].accession == "PDT0001"
 
 
 async def test_full_scoring_flow_tier_one_only(
@@ -221,7 +221,7 @@ async def test_full_scoring_flow_tier_one_only(
     seed_vec = np.random.default_rng(99).standard_normal(_DIM).astype(np.float32)
     await _seed_isolate_with_embedding(
         mew_pool,
-        accession="PDT0099.1",
+        accession="PDT0099",
         organism="Listeria",
         embedding=seed_vec,
     )
@@ -256,14 +256,14 @@ async def test_full_scoring_flow_tier_one_only(
         candidate_threshold=0.3,
     )
 
-    result = await pipeline.process(make_embeddings_ready(accession="PDT0099.1"))
+    result = await pipeline.process(make_embeddings_ready(accession="PDT0099"))
     assert result.outcome is Outcome.SUCCESS
     assert not result.was_candidate
 
     async with mew_pool.connection() as conn, conn.cursor() as cur:
         await cur.execute(
             "SELECT coverage, mahalanobis FROM isolates WHERE accession = %s",
-            ("PDT0099.1",),
+            ("PDT0099",),
         )
         row: Any = await cur.fetchone()
     assert row is not None

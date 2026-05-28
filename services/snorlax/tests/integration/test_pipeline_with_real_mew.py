@@ -80,7 +80,7 @@ class _FakeProdigal:
 
 def _make_event(
     *,
-    accession: str = "PDT_INT_001.1",
+    accession: str = "PDT_INT_001",
     asm_acc: str = "GCA_000123456.1",
 ) -> IsolateDiscovered:
     return IsolateDiscovered(
@@ -173,7 +173,7 @@ async def test_404_persists_qc_failed(
         work_dir=tmp_work_dir,
         downloader_error=GenomeNotFoundError("gone"),
     )
-    event = _make_event(accession="PDT_INT_002.1")
+    event = _make_event(accession="PDT_INT_002")
 
     result = await pipeline.process(event)
 
@@ -198,7 +198,7 @@ async def test_idempotent_replay(
         fixture_path=fixtures_dir / "synthetic_genomic.fna.gz",
         work_dir=tmp_work_dir,
     )
-    event = _make_event(accession="PDT_INT_003.1")
+    event = _make_event(accession="PDT_INT_003")
 
     r1 = await pipeline.process(event)
     r2 = await pipeline.process(event)
