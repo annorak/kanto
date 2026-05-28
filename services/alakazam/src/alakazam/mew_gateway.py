@@ -22,6 +22,7 @@ second consumer, not the first.
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -311,15 +312,13 @@ class AlakazamMewGateway:
         organism: str,
         *,
         batch_size: int = 1000,
-    ) -> list[list[float]]:
-        """Return every embedding for ``organism`` as a list of vectors.
+    ) -> AsyncIterator[list[float]]:
+        """Yield each embedding for ``organism`` one row at a time.
 
-        Only used by the centroid CronJob. We materialize into memory
-        rather than streaming because a single species's full embedding
-        cloud at ~1M * 1152 * 4 bytes is ~4.6 GB worst case, and a
-        species with that many isolates is well outside v1 scope. If
-        we ever cross that line, swap this for an async generator
-        that yields batches.
+        Uses a server-side named cursor with ``itersize=batch_size`` so
+        Postgres streams rows lazily and memory stays bounded by the
+        single-vector width (~9 KB at fp32 * 1152) plus the cursor
+        buffer -- not by the species's full embedding cloud.
         """
         sql = """
         SELECT e.embedding
@@ -327,7 +326,6 @@ class AlakazamMewGateway:
           JOIN isolates AS i ON i.accession = e.accession
          WHERE i.organism = %s
         """
-        embeddings: list[list[float]] = []
         async with self._mew.connection() as conn:
             conn_typed: psycopg.AsyncConnection[Any] = conn
             async with conn_typed.cursor(name="centroid_stream") as cur:
@@ -335,8 +333,7 @@ class AlakazamMewGateway:
                 await cur.execute(sql, (organism,))
                 async for row in cur:
                     # Named-cursor rows are tuples; column 0 is the embedding.
-                    embeddings.append(list(row[0]))
-        return embeddings
+                    yield list(row[0])
 
     async def list_organisms_with_embeddings(
         self,

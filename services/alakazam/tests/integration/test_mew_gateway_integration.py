@@ -238,7 +238,7 @@ async def test_stream_embeddings_returns_all_for_organism(
     for i in range(4):
         await _seed_isolate(mew_pool, accession=f"PDT0{i}", organism="Salmonella")
     gateway = AlakazamMewGateway(mew=mew_client)
-    rows = await gateway.stream_embeddings_by_organism("Salmonella")
+    rows = [r async for r in gateway.stream_embeddings_by_organism("Salmonella")]
     assert len(rows) == 4
     assert all(len(r) == _DIM for r in rows)
 
