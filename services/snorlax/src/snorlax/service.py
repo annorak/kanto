@@ -173,12 +173,10 @@ class SnorlaxService:
         run_once = self._settings.snorlax.run_once
         async for parsed in self._consumer.messages():
             if not isinstance(parsed.event, IsolateDiscovered):
-                # Wrong event on this topic — DLQ via the consumer's
-                # failure path so the offset advances. We synthesize a
-                # type-error to drive the path.
-                await self._consumer.handle_failure(
+                # Wrong event on this topic is deterministic — straight to DLQ.
+                await self._consumer.dlq_now(
                     parsed,
-                    TypeError(f"unexpected event {type(parsed.event).__name__} on {parsed.topic}"),
+                    f"unexpected event {type(parsed.event).__name__} on {parsed.topic}",
                 )
                 continue
 
@@ -213,27 +211,16 @@ class SnorlaxService:
             await self._consumer.commit(msg)
             return
         if result.outcome is Outcome.DLQ:
-            # ``handle_failure`` only DLQs when retries are exhausted.
-            # For deterministic-DLQ outcomes we want to skip the retry
-            # ladder entirely: replay ``handle_failure`` enough times
-            # to exhaust the budget here, in one shot.
-            for _ in range(self._settings.streaming.max_processing_attempts):
-                routed = await self._consumer.handle_failure(
-                    msg,
-                    _PipelineDLQError(result.reason or result.outcome.value),
-                )
-                if routed:
-                    return
-            # If we somehow didn't route (shouldn't happen), commit so
-            # the message doesn't poison the partition.
-            logger.error(
-                "snorlax.service: handle_failure did not DLQ %s; committing",
-                msg.offset,
-            )
-            await self._consumer.commit(msg)
+            await self._consumer.dlq_now(msg, result.reason or result.outcome.value)
             return
-        # TRANSIENT_RETRY: just leave the offset alone. aiokafka will
-        # redeliver on the next poll.
+        # TRANSIENT_RETRY: register the failure with the consumer so it
+        # bumps the retry counter. The wrapper keeps the message's
+        # offset uncommitted and re-yields it on the next iteration;
+        # when ``max_processing_attempts`` is exhausted the wrapper
+        # auto-DLQs it.
+        await self._consumer.handle_failure(
+            msg, _PipelineDLQError(result.reason or result.outcome.value)
+        )
 
     # -------------------- shutdown --------------------
 
