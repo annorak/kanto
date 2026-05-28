@@ -309,7 +309,11 @@ Deployment (no per-partition state). CPU-bound, lightweight.
 
 **Tiered scoring.** ~95% of isolates get only the cheap genome-level check; ~5% trigger the full coverage check. Keeps Alakazam efficient and Blob reads minimal.
 
-### 6.5 Chatot (Alerter) — on AKS
+### 6.5 Chatot (Alerter) — on AKS — **deferred from v1**
+
+> Chatot is not implemented in v1. The shape below is the intended v2
+> design; until it ships, scored events accumulate on `kanto.scored`
+> and the `alerts` table is populated only by ad-hoc scripts.
 
 Deployment (no per-partition state).
 
