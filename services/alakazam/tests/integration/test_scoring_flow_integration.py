@@ -136,7 +136,7 @@ async def test_full_scoring_flow_tier_two(
     parquet = make_protein_parquet_bytes(proteins)
     storage.put_bytes(
         container="kanto-embeddings",
-        key="PDT0001.1/1.parquet",
+        key="PDT0001/1.parquet",
         data=parquet,
     )
 
