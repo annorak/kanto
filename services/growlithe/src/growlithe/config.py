@@ -3,10 +3,10 @@
 Extends :class:`kanto_commons.config.KantoBaseSettings` with the
 service-specific knobs documented in ``services/growlithe/README.md``.
 
-All configuration is environment-driven; no config files are
-committed. The Helm chart populates the env vars from the chart
-values or from Azure Key Vault via the Secrets Store CSI Driver
-(``KANTO_MEW_PASSWORD`` in particular).
+Config sources: ``KANTO_CONFIG_FILE`` TOML + ``KANTO_*`` env vars
+(env wins). The Helm chart populates the env vars from chart values
+or from Azure Key Vault via the Secrets Store CSI Driver
+(``KANTO_MEW_PASSWORD`` in particular). Secrets stay env-only.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from kanto_commons.config import (
     ObjectStorageSettings,
     StreamingSettings,
     TracingSettings,
+    load_section,
 )
 from pydantic import (
     AliasChoices,
@@ -155,11 +156,11 @@ class GrowlitheSettings(KantoBaseSettings):
     @classmethod
     def load(cls) -> Self:
         return cls(
-            mew=MewSettings(),  # type: ignore[call-arg]
-            object_storage=ObjectStorageSettings(),  # type: ignore[call-arg]
-            streaming=StreamingSettings(),  # type: ignore[call-arg]
-            tracing=TracingSettings(),
-            growlithe=GrowlitheServiceSettings(),
+            mew=load_section(MewSettings, "mew"),
+            object_storage=load_section(ObjectStorageSettings, "object_storage"),
+            streaming=load_section(StreamingSettings, "streaming"),
+            tracing=load_section(TracingSettings, "tracing"),
+            growlithe=load_section(GrowlitheServiceSettings, "growlithe"),
         )
 
 
