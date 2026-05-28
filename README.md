@@ -21,31 +21,31 @@ decision live in [`docs/design.md`](docs/design.md). Read that first.
 ├── .github/workflows/                 GitHub Actions: ci.yml, secret-scan.yml
 ├── docs/                              Architecture and operations documentation
 ├── infrastructure/
-│   └── terraform/                     OCI Terraform modules (VCN, OKE, OS, Streaming, Mew)
+│   └── terraform/                     Azure Terraform modules (VNet, AKS, Blob, Event Hubs, Mew)
 ├── libs/
 │   └── kanto-commons/                  Shared Python code across services
 ├── scripts/                           Operational and pre-commit helper scripts
 ├── services/
-│   ├── alakazam/                      Scorer (k-NN + novelty score) — OKE
-│   │   └── helm/                      Helm chart deployed to OKE
-│   ├── chatot/                        Alerter (Slack / PagerDuty / digest) — OKE
-│   │   └── helm/                      Helm chart deployed to OKE
+│   ├── alakazam/                      Scorer (k-NN + novelty score) — AKS
+│   │   └── helm/                      Helm chart deployed to AKS
+│   ├── chatot/                        Alerter (Slack / PagerDuty / digest) — AKS
+│   │   └── helm/                      Helm chart deployed to AKS
 │   ├── ditto/                         Embedder (ESM C 600M on GPU) — Modal
-│   ├── growlithe/                     Discoverer (NCBI FTP polling) — OKE
-│   │   └── helm/                      Helm chart deployed to OKE
-│   └── snorlax/                       Ingester + gene predictor — OKE
-│       └── helm/                      Helm chart deployed to OKE
+│   ├── growlithe/                     Discoverer (NCBI FTP polling) — AKS
+│   │   └── helm/                      Helm chart deployed to AKS
+│   └── snorlax/                       Ingester + gene predictor — AKS
+│       └── helm/                      Helm chart deployed to AKS
 └── tests/                             Repository-level checks
 ```
 
 Each Helm chart lives next to the service it deploys: edits to a service's
 code, image, and chart belong in the same commit and the same review.
-Cross-cutting infrastructure (the OKE cluster, the Mew database, Object
+Cross-cutting infrastructure (the AKS cluster, the Mew database, Blob
 Storage buckets, Streaming topics, IAM policies) lives under
 `infrastructure/terraform/` because it is not owned by any single service.
 
 Ditto is the exception to the per-service-Helm pattern: it runs on Modal,
-not on OKE, so it does not have a Helm chart. Its Modal app definition
+not on AKS, so it does not have a Helm chart. Its Modal app definition
 lives inside `services/ditto/` itself.
 
 Mew — the PostgreSQL 16 + pgvector instance — is not a service in the code
@@ -57,7 +57,7 @@ migrations live under `infrastructure/`.
 ## Getting started
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full local-setup
-walkthrough, including `direnv`, `uv`, OCI CLI configuration, Modal
+walkthrough, including `direnv`, `uv`, Azure CLI configuration, Modal
 authentication, and pre-commit hooks.
 
 The short version:
@@ -94,7 +94,7 @@ manual steps in [`PREREQUISITES.md`](PREREQUISITES.md).
 - [`docs/design.md`](docs/design.md) — system design (current draft, v3)
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — local development setup and PR conventions
 - [`SECURITY.md`](SECURITY.md) — secret-handling policy and vulnerability reporting
-- [`PREREQUISITES.md`](PREREQUISITES.md) — manual setup for OCI / Modal / GitHub
+- [`PREREQUISITES.md`](PREREQUISITES.md) — manual setup for Azure / Modal / GitHub
 
 ---
 
